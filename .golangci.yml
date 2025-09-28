@@ -1,0 +1,65 @@
+version: 2
+
+run:
+  timeout: 3m
+  tests: true
+  skip-dirs:
+    - testdata
+
+issues:
+  exclude-use-default: false
+  max-issues-per-linter: 0
+  max-same-issues: 0
+
+linters:
+  enable:
+    # Constitutional Quality Standards - Code Quality Excellence
+    - errcheck      # Check for unchecked errors
+    - govet         # Vet examines Go source code and reports suspicious constructs
+    - ineffassign   # Detects when assignments to existing variables are not used
+    - staticcheck   # Advanced Go linter (includes gosimple, staticcheck, stylecheck)
+    - unused        # Check for unused constants, variables, functions and types
+    - misspell      # Finds commonly misspelled English words in comments
+    - unconvert     # Remove unnecessary type conversions
+    
+    # Performance and Memory Management
+    - prealloc      # Find slice declarations that could potentially be preallocated
+    
+    # Code Style and Consistency
+    - revive        # Fast, configurable, extensible, flexible, and beautiful linter for Go
+    
+    # Security
+    - gosec         # Inspects source code for security problems
+
+  settings:
+    revive:
+      rules:
+        - name: exported
+          severity: error
+        - name: package-comments
+          severity: warning
+        - name: var-naming
+          severity: warning
+        - name: function-result-limit
+          severity: warning
+          arguments: [3]
+        - name: line-length-limit
+          severity: warning
+          arguments: [120]
+          
+    gosec:
+      excludes:
+        - G404 # Random number generation - acceptable for non-crypto use
+
+formatters:
+  enable:
+    - gci           # Controls Go package import order and makes it always deterministic
+    - gofmt         # Standard Go formatter
+    - goimports     # Manages imports automatically
+
+  settings:
+    gci:
+      sections:
+        - standard
+        - default
+        - prefix(github.com/pashagolub/confelo)
