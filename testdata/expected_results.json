@@ -42,12 +42,12 @@
       "winner": "PROP007",
       "expected_results": {
         "PROP007": {
-          "new_rating": 1851,
-          "rating_change": 1
+          "new_rating": 1850.18,
+          "rating_change": 0.18
         },
         "PROP020": {
-          "new_rating": 979,
-          "rating_change": 29
+          "new_rating": 949.82,
+          "rating_change": -0.18
         }
       }
     },
@@ -66,12 +66,12 @@
       "winner": "PROP020",
       "expected_results": {
         "PROP020": {
-          "new_rating": 981,
-          "rating_change": 31
+          "new_rating": 981.82,
+          "rating_change": 31.82
         },
         "PROP007": {
-          "new_rating": 1819,
-          "rating_change": -31
+          "new_rating": 1818.18,
+          "rating_change": -31.82
         }
       }
     },
@@ -90,12 +90,12 @@
       "winner": "PROP003",
       "expected_results": {
         "PROP001": {
-          "new_rating": 1184,
-          "rating_change": -16
+          "new_rating": 1186.29,
+          "rating_change": -13.71
         },
         "PROP003": {
-          "new_rating": 1266,
-          "rating_change": 16
+          "new_rating": 1263.71,
+          "rating_change": 13.71
         }
       }
     },
