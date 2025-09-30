@@ -324,25 +324,25 @@
 
 ### TUI Components
 
-#### Task 16: Proposal Carousel Component
+#### Task 16: Proposal Carousel Component ✅
 
 **Duration**: 2 hours  
 **Dependencies**: Task 13  
 **Parallel**: [P]
 
-- Create `pkg/tui/components/carousel.go` for proposal display
-- Implement smooth navigation between proposals
-- Add proposal detail expansion and formatting
-- Write carousel tests in `pkg/tui/components/carousel_test.go`
-- Handle proposals with varying content lengths gracefully
+- ✅ Create `pkg/tui/components/carousel.go` for proposal display
+- ✅ Implement smooth navigation between proposals
+- ✅ Add proposal detail expansion and formatting
+- ✅ Write carousel tests in `pkg/tui/components/carousel_test.go`
+- ✅ Handle proposals with varying content lengths gracefully
 
 **Acceptance Criteria**:
 
-- Carousel navigation is smooth and intuitive
-- Proposal details display clearly in available space
-- Content overflow handling works correctly
-- Navigation wraps appropriately at boundaries
-- Component integrates seamlessly with comparison screens
+- ✅ Carousel navigation is smooth and intuitive
+- ✅ Proposal details display clearly in available space
+- ✅ Content overflow handling works correctly
+- ✅ Navigation wraps appropriately at boundaries
+- ✅ Component integrates seamlessly with comparison screens
 
 #### Task 17: Progress Indicators Component
 

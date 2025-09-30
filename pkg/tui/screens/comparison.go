@@ -14,25 +14,22 @@ import (
 
 	"github.com/pashagolub/confelo/pkg/data"
 	"github.com/pashagolub/confelo/pkg/elo"
+	"github.com/pashagolub/confelo/pkg/tui/components"
 )
 
 // ComparisonScreen implements the comparison interface for ranking proposals
 type ComparisonScreen struct {
 	// UI components
-	container       *tview.Flex
-	leftPanel       *tview.Flex
-	rightPanel      *tview.Flex
-	proposalDisplay *tview.Flex
-	controlPanel    *tview.TextView
-	progressBar     *tview.TextView
-	statusBar       *tview.TextView
-
-	// Carousel components for proposal navigation
-	currentProposals []data.Proposal
-	currentIndex     int
-	totalProposals   int
+	container        *tview.Flex
+	leftPanel        *tview.Flex
+	rightPanel       *tview.Flex
+	proposalCarousel *components.Carousel
+	controlPanel     *tview.TextView
+	progressBar      *tview.TextView
+	statusBar        *tview.TextView
 
 	// Comparison state
+	currentProposals []data.Proposal
 	comparisonMethod data.ComparisonMethod
 	selectedWinner   string
 	rankings         []string
@@ -48,15 +45,15 @@ func NewComparisonScreen() *ComparisonScreen {
 		container:        tview.NewFlex(),
 		leftPanel:        tview.NewFlex(),
 		rightPanel:       tview.NewFlex(),
-		proposalDisplay:  tview.NewFlex(),
+		proposalCarousel: components.NewCarousel(),
 		controlPanel:     tview.NewTextView(),
 		progressBar:      tview.NewTextView(),
 		statusBar:        tview.NewTextView(),
-		currentIndex:     0,
 		comparisonMethod: data.MethodPairwise,
 	}
 
 	cs.setupUI()
+	cs.setupCarouselCallbacks()
 	return cs
 }
 
@@ -77,10 +74,8 @@ func (cs *ComparisonScreen) setupUI() {
 		SetTitle("Comparison Controls").
 		SetBorderColor(tcell.ColorGreen)
 
-	// Configure proposal display area
-	cs.proposalDisplay.SetDirection(tview.FlexColumn).
-		SetBorder(true).
-		SetTitle("Proposal Details")
+	// Configure proposal carousel
+	// Carousel is configured through its own methods
 
 	// Configure control panel - use TextView methods correctly
 	cs.controlPanel.
@@ -98,8 +93,8 @@ func (cs *ComparisonScreen) setupUI() {
 		SetBorder(true).
 		SetTitle("Status")
 
-	// Layout left panel: proposal display takes most space
-	cs.leftPanel.AddItem(cs.proposalDisplay, 0, 1, false)
+	// Layout left panel: proposal carousel takes most space
+	cs.leftPanel.AddItem(cs.proposalCarousel.GetPrimitive(), 0, 1, false)
 
 	// Layout right panel: controls, progress, status
 	cs.rightPanel.
@@ -117,6 +112,20 @@ func (cs *ComparisonScreen) setupUI() {
 
 	// Initialize with default instructions
 	cs.updateInstructions()
+}
+
+// setupCarouselCallbacks configures callbacks for the proposal carousel
+func (cs *ComparisonScreen) setupCarouselCallbacks() {
+	// Navigation callback to update display when user navigates
+	cs.proposalCarousel.SetOnNavigate(func(index int, proposal data.Proposal) {
+		cs.updateDisplay()
+	})
+
+	// Selection callback for proposal selection
+	cs.proposalCarousel.SetOnSelect(func(index int, proposal data.Proposal) {
+		// In comparison mode, selection could trigger comparison selection
+		cs.selectProposalForComparison(index + 1) // Convert to 1-based index
+	})
 }
 
 // GetPrimitive returns the main container primitive
@@ -253,83 +262,38 @@ func (cs *ComparisonScreen) loadNextComparison() error {
 	// Simple selection for now - take first N proposals
 	cs.currentProposals = make([]data.Proposal, count)
 	copy(cs.currentProposals, proposals[:count])
-	cs.totalProposals = len(proposals)
-	cs.currentIndex = 0
+
+	// Load proposals into the carousel
+	cs.proposalCarousel.SetProposals(cs.currentProposals)
 
 	return nil
 }
 
-// updateDisplay refreshes the proposal display and UI state
+// updateDisplay refreshes the UI state (carousel handles its own display)
 func (cs *ComparisonScreen) updateDisplay() {
-	if len(cs.currentProposals) == 0 {
-		return
-	}
-
-	// Clear existing display
-	cs.proposalDisplay.Clear()
-
-	// Add proposal cards based on comparison method
-	for i, proposal := range cs.currentProposals {
-		card := cs.createProposalCard(proposal, i+1)
-		cs.proposalDisplay.AddItem(card, 0, 1, i == cs.currentIndex)
-	}
-
-	// Update control panel
+	// Update control panel components
 	cs.updateInstructions()
 	cs.updateProgress()
 	cs.updateStatus()
 }
 
-// createProposalCard creates a display card for a single proposal
-func (cs *ComparisonScreen) createProposalCard(proposal data.Proposal, number int) *tview.TextView {
-	card := tview.NewTextView()
-	card.SetBorder(true)
-	card.SetTitle(fmt.Sprintf("Proposal %d", number))
-	card.SetWordWrap(true)
-
-	// Highlight current selection
-	if number-1 == cs.currentIndex {
-		card.SetBorderColor(tcell.ColorYellow)
-		card.SetTitleColor(tcell.ColorYellow)
-	} else {
-		card.SetBorderColor(tcell.ColorWhite)
-		card.SetTitleColor(tcell.ColorWhite)
+// selectProposalForComparison handles proposal selection in comparison mode
+func (cs *ComparisonScreen) selectProposalForComparison(number int) {
+	if number < 1 || number > len(cs.currentProposals) {
+		return
 	}
 
-	// Format proposal content
-	content := fmt.Sprintf("[white::b]%s[white::-]\n\n", proposal.Title)
-
-	if proposal.Speaker != "" {
-		content += fmt.Sprintf("[yellow]Speaker:[-] %s\n\n", proposal.Speaker)
-	}
-
-	if proposal.Abstract != "" {
-		content += fmt.Sprintf("[green]Abstract:[-]\n%s\n\n", proposal.Abstract)
-	}
-
-	content += fmt.Sprintf("[blue]Current Rating:[-] %.0f", proposal.Score)
-
-	if len(proposal.ConflictTags) > 0 {
-		content += fmt.Sprintf("\n[red]Conflicts:[-] %s", strings.Join(proposal.ConflictTags, ", "))
-	}
-
-	card.SetText(content)
-	return card
+	cs.selectedWinner = cs.currentProposals[number-1].ID
+	cs.updateDisplay()
 }
 
 // navigateProposals handles left/right navigation between proposals
 func (cs *ComparisonScreen) navigateProposals(right bool) {
-	if len(cs.currentProposals) <= 1 {
-		return
-	}
-
 	if right {
-		cs.currentIndex = (cs.currentIndex + 1) % len(cs.currentProposals)
+		cs.proposalCarousel.Next()
 	} else {
-		cs.currentIndex = (cs.currentIndex - 1 + len(cs.currentProposals)) % len(cs.currentProposals)
+		cs.proposalCarousel.Previous()
 	}
-
-	cs.updateDisplay()
 }
 
 // selectWinner handles winner selection in comparison
@@ -547,7 +511,8 @@ func (cs *ComparisonScreen) updateProgress() {
 
 	completed := len(session.CompletedComparisons)
 	// Rough estimate of total comparisons needed
-	total := cs.totalProposals * (cs.totalProposals - 1) / 2 // All pairs
+	totalProposals := len(session.Proposals)
+	total := totalProposals * (totalProposals - 1) / 2 // All pairs
 
 	progress := fmt.Sprintf("Comparisons: %d/%d (%.1f%%)",
 		completed, total, float64(completed)/float64(total)*100)
@@ -557,8 +522,15 @@ func (cs *ComparisonScreen) updateProgress() {
 
 // updateStatus updates the status display
 func (cs *ComparisonScreen) updateStatus() {
+	session := cs.getSession()
+	totalProposals := 0
+	if session != nil {
+		totalProposals = len(session.Proposals)
+	}
+
+	currentIndex := cs.proposalCarousel.GetCurrentIndex()
 	status := fmt.Sprintf("Proposals: %d | Current: %d/%d",
-		cs.totalProposals, cs.currentIndex+1, len(cs.currentProposals))
+		totalProposals, currentIndex+1, len(cs.currentProposals))
 
 	if cs.selectedWinner != "" {
 		status += " | Winner selected"
