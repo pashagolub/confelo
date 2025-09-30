@@ -302,25 +302,25 @@
 - ✅ Export integration works seamlessly
 - ✅ Screen updates reflect real-time rating changes
 
-#### Task 15: Setup and Configuration Screen
+#### Task 15: Setup and Configuration Screen ✅
 
 **Duration**: 2 hours  
 **Dependencies**: Task 12  
 **Parallel**: [P]
 
-- Create `pkg/tui/screens/setup.go` for initial configuration
-- Implement CSV file selection and validation interface
-- Add Elo configuration parameter adjustment
-- Write setup screen tests in `pkg/tui/screens/setup_test.go`
-- Provide configuration preview and validation feedback
+- ✅ Create `pkg/tui/screens/setup.go` for initial configuration
+- ✅ Implement CSV file selection and validation interface
+- ✅ Add Elo configuration parameter adjustment
+- ✅ Write setup screen tests in `pkg/tui/screens/setup_test.go`
+- ✅ Provide configuration preview and validation feedback
 
 **Acceptance Criteria**:
 
-- File selection works across different operating systems
-- Configuration validation provides immediate feedback
-- Parameter adjustment interface is intuitive
-- Preview shows configuration effects clearly
-- Setup process guides users through required steps
+- ✅ File selection works across different operating systems
+- ✅ Configuration validation provides immediate feedback
+- ✅ Parameter adjustment interface is intuitive
+- ✅ Preview shows configuration effects clearly
+- ✅ Setup process guides users through required steps
 
 ### TUI Components
 
