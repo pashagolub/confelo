@@ -366,25 +366,25 @@
 
 ### CLI Integration
 
-#### Task 18: Command Line Interface
+#### Task 18: Command Line Interface ✅
 
 **Duration**: 2 hours  
 **Dependencies**: Task 11, Task 17  
 **Parallel**: No
 
-- Create `cmd/confelo/main.go` with CLI argument parsing
-- Implement subcommands: compare, export, validate
-- Add command-line configuration override capabilities
-- Write CLI integration tests in `cmd/confelo/main_test.go`
-- Support batch mode and interactive mode selection
+- ✅ Create `cmd/confelo/main.go` with CLI argument parsing
+- ✅ Implement subcommands: start, resume, export, list, validate
+- ✅ Add command-line configuration override capabilities
+- ✅ Write CLI integration tests in `cmd/confelo/main_test.go`
+- ✅ Support batch mode and interactive mode selection
 
 **Acceptance Criteria**:
 
-- All CLI commands work correctly with proper argument validation
-- Help text provides clear usage instructions
-- Configuration overrides work from command line
-- Batch mode enables non-interactive operation
-- Error messages are helpful and actionable
+- ✅ All CLI commands work correctly with proper argument validation
+- ✅ Help text provides clear usage instructions
+- ✅ Configuration overrides work from command line
+- ✅ Batch mode enables non-interactive operation
+- ✅ Error messages are helpful and actionable
 
 ### Integration & Quality Assurance
 
@@ -394,6 +394,7 @@
 **Dependencies**: Task 18  
 **Parallel**: No
 
+- Implement full interactive mode
 - Implement complete workflow tests using quickstart.md scenarios
 - Test CSV input → comparison → export pipeline
 - Add performance benchmarks for constitutional compliance
@@ -407,6 +408,7 @@
 - Memory usage stays below 100MB for 200 proposals
 - Cross-platform testing confirms compatibility
 - Integration tests catch regression issues effectively
+- Interactive mode functions as expected
 
 #### Task 20: Documentation and Polish
 

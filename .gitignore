@@ -29,7 +29,6 @@ go.work
 Thumbs.db
 
 # Application-specific
-confelo
 confelo.exe
 *.log
 *.csv.bak
