@@ -16,6 +16,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/pashagolub/confelo/pkg/journal"
 )
 
 // Error types for session management
@@ -71,9 +73,10 @@ type Session struct {
 	RatingBins         []RatingBin         `json:"rating_bins"`         // Strategic grouping
 
 	// Internal state management
-	mutex            sync.RWMutex `json:"-"` // Thread safety (not serialized)
-	autosaveEnabled  bool         `json:"-"` // Auto-save configuration
-	storageDirectory string       `json:"-"` // Where to persist session
+	mutex            sync.RWMutex        `json:"-"` // Thread safety (not serialized)
+	autosaveEnabled  bool                `json:"-"` // Auto-save configuration
+	storageDirectory string              `json:"-"` // Where to persist session
+	auditTrail       *journal.AuditTrail `json:"-"` // Audit logging (not serialized)
 }
 
 // ComparisonState represents the current active comparison
@@ -203,6 +206,25 @@ func NewSession(name string, proposals []Proposal, config SessionConfig) (*Sessi
 		RatingBins:           make([]RatingBin, 0),
 		autosaveEnabled:      config.UI.AutoSave,
 		storageDirectory:     "./sessions", // Default storage directory
+	}
+
+	// Initialize audit trail
+	auditTrail, err := journal.NewAuditTrail(sessionID, session.storageDirectory)
+	if err != nil {
+		return nil, fmt.Errorf("failed to initialize audit trail: %w", err)
+	}
+	session.auditTrail = auditTrail
+
+	// Log session creation
+	sessionMetadata := map[string]interface{}{
+		"session_name":   name,
+		"proposal_count": len(proposals),
+		"initial_rating": config.Elo.InitialRating,
+		"k_factor":       config.Elo.KFactor,
+	}
+	if err := session.auditTrail.LogSessionEvent(journal.EventSessionCreated, sessionMetadata); err != nil {
+		// Log error but don't fail session creation
+		fmt.Printf("Warning: failed to log session creation: %v\n", err)
 	}
 
 	// Initialize rating bins
@@ -457,6 +479,20 @@ func (s *Session) StartComparison(proposalIDs []string, method ComparisonMethod)
 		s.Status = StatusActive
 	}
 
+	// Log comparison start to audit trail
+	if s.auditTrail != nil {
+		auditData := journal.ComparisonAuditData{
+			ComparisonID: comparisonID,
+			ProposalIDs:  proposalIDs,
+			Method:       string(method),
+		}
+
+		if err := s.auditTrail.LogComparison(journal.EventComparisonStarted, auditData); err != nil {
+			// Log error but don't fail the comparison start
+			fmt.Printf("Warning: failed to log comparison start to audit trail: %v\n", err)
+		}
+	}
+
 	s.UpdatedAt = time.Now()
 
 	// Note: Autosave disabled for now to avoid mutex deadlock issues
@@ -546,6 +582,47 @@ func (s *Session) completeComparisonInternal(winnerID string, rankings []string,
 	// Update convergence metrics
 	s.updateConvergenceMetrics()
 
+	// Log comparison completion to audit trail
+	if s.auditTrail != nil {
+		auditData := journal.ComparisonAuditData{
+			ComparisonID: comparison.ID,
+			ProposalIDs:  comparison.ProposalIDs,
+			Method:       string(comparison.Method),
+			WinnerID:     comparison.WinnerID,
+			Rankings:     comparison.Rankings,
+			Duration:     comparison.Duration.String(),
+			SkipReason:   comparison.SkipReason,
+		}
+
+		var eventType journal.AuditEventType
+		if comparison.Skipped {
+			eventType = journal.EventComparisonSkipped
+		} else {
+			eventType = journal.EventComparisonCompleted
+		}
+
+		if err := s.auditTrail.LogComparison(eventType, auditData); err != nil {
+			// Log error but don't fail the comparison
+			fmt.Printf("Warning: failed to log comparison to audit trail: %v\n", err)
+		}
+
+		// Log rating updates if any
+		for _, eloUpdate := range comparison.EloUpdates {
+			ratingData := journal.RatingAuditData{
+				ComparisonID: comparison.ID,
+				ProposalID:   eloUpdate.ProposalID,
+				OldRating:    eloUpdate.OldRating,
+				NewRating:    eloUpdate.NewRating,
+				RatingDelta:  eloUpdate.RatingDelta,
+				KFactor:      eloUpdate.KFactor,
+			}
+
+			if err := s.auditTrail.LogRatingUpdate(ratingData); err != nil {
+				fmt.Printf("Warning: failed to log rating update to audit trail: %v\n", err)
+			}
+		}
+	}
+
 	s.UpdatedAt = time.Now()
 
 	// Note: Autosave disabled for now to avoid mutex deadlock issues
@@ -581,6 +658,18 @@ func (s *Session) PauseSession() error {
 	// Cancel any active comparison
 	s.CurrentComparison = nil
 	s.Status = StatusPaused
+
+	// Log session pause
+	if s.auditTrail != nil {
+		metadata := map[string]interface{}{
+			"total_comparisons":           len(s.CompletedComparisons),
+			"active_comparison_cancelled": s.CurrentComparison != nil,
+		}
+		if err := s.auditTrail.LogSessionEvent(journal.EventSessionPaused, metadata); err != nil {
+			fmt.Printf("Warning: failed to log session pause: %v\n", err)
+		}
+	}
+
 	s.UpdatedAt = time.Now()
 
 	// Force save when pausing
@@ -597,6 +686,17 @@ func (s *Session) ResumeSession() error {
 	}
 
 	s.Status = StatusActive
+
+	// Log session resume
+	if s.auditTrail != nil {
+		metadata := map[string]interface{}{
+			"total_comparisons": len(s.CompletedComparisons),
+		}
+		if err := s.auditTrail.LogSessionEvent(journal.EventSessionResumed, metadata); err != nil {
+			fmt.Printf("Warning: failed to log session resume: %v\n", err)
+		}
+	}
+
 	s.UpdatedAt = time.Now()
 
 	return nil
@@ -610,6 +710,19 @@ func (s *Session) CompleteSession() error {
 	// Cancel any active comparison
 	s.CurrentComparison = nil
 	s.Status = StatusComplete
+
+	// Log session completion
+	if s.auditTrail != nil {
+		metadata := map[string]interface{}{
+			"total_comparisons": len(s.CompletedComparisons),
+			"final_convergence": s.ConvergenceMetrics.ConvergenceScore,
+			"duration_seconds":  time.Since(s.CreatedAt).Seconds(),
+		}
+		if err := s.auditTrail.LogSessionEvent(journal.EventSessionCompleted, metadata); err != nil {
+			fmt.Printf("Warning: failed to log session completion: %v\n", err)
+		}
+	}
+
 	s.UpdatedAt = time.Now()
 
 	// Force save when completing
@@ -1749,6 +1862,49 @@ type ProposalPair struct {
 	RatingDistance  float64   `json:"rating_distance"`
 	ComparisonCount int       `json:"comparison_count"`
 	LastCompared    time.Time `json:"last_compared"`
+}
+
+// Close closes the session and releases resources including the audit trail
+func (s *Session) Close() error {
+	s.mutex.Lock()
+	defer s.mutex.Unlock()
+
+	// Close audit trail
+	if s.auditTrail != nil {
+		if err := s.auditTrail.Close(); err != nil {
+			return fmt.Errorf("failed to close audit trail: %w", err)
+		}
+		s.auditTrail = nil
+	}
+
+	return nil
+}
+
+// GetAuditLogger returns the session's audit trail logger (for external access)
+func (s *Session) GetAuditLogger() *journal.AuditTrail {
+	s.mutex.RLock()
+	defer s.mutex.RUnlock()
+	return s.auditTrail
+}
+
+// InitializeAuditTrail initializes the audit trail for an existing session
+// (used when loading sessions from storage)
+func (s *Session) InitializeAuditTrail(storageDir string) error {
+	s.mutex.Lock()
+	defer s.mutex.Unlock()
+
+	if s.auditTrail != nil {
+		// Already initialized
+		return nil
+	}
+
+	auditTrail, err := journal.NewAuditTrail(s.ID, storageDir)
+	if err != nil {
+		return fmt.Errorf("failed to initialize audit trail: %w", err)
+	}
+
+	s.auditTrail = auditTrail
+	return nil
 }
 
 // min returns the minimum of two integers

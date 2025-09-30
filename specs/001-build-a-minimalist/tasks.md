@@ -31,6 +31,7 @@
 - Create basic `README.md` with build instructions
 
 **Acceptance Criteria**:
+
 - `go mod tidy` runs without errors
 - `golangci-lint run` passes with zero issues
 - All directories from plan.md exist
@@ -48,6 +49,7 @@
 - Create minimal and large dataset variants for performance testing
 
 **Acceptance Criteria**:
+
 - Sample CSV loads without parsing errors
 - Test data covers edge cases (empty abstracts, special characters)
 - Multiple dataset sizes available (10, 50, 200 proposals)
@@ -67,6 +69,7 @@
 - Validate K-factor variations and rating bounds enforcement
 
 **Acceptance Criteria**:
+
 - All mathematical formulas match Chess Elo specifications
 - Unit tests achieve >95% coverage
 - Property-based tests verify rating conservation
@@ -86,6 +89,7 @@
 - Test edge cases: tied positions, single proposal "comparisons"
 
 **Acceptance Criteria**:
+
 - Trio comparison generates exactly 3 pairwise games
 - Quartet comparison generates exactly 6 pairwise games  
 - Manual verification matches automated decomposition results
@@ -105,6 +109,7 @@
 - Write comprehensive tests for optimization algorithms
 
 **Acceptance Criteria**:
+
 - Rating bin assignment works correctly for different ranges
 - Convergence detection accurately identifies stable rankings
 - Matchup selection prioritizes informative comparisons
@@ -126,6 +131,7 @@
 - Support environment variables and configuration file loading
 
 **Acceptance Criteria**:
+
 - All configuration from data-model.md supported
 - Robust validation with helpful error messages
 - Default values match constitutional requirements
@@ -145,6 +151,7 @@
 - Test CSV parsing integration with various formats
 
 **Acceptance Criteria**:
+
 - All proposal fields from data-model.md implemented
 - Validation catches required fields and invalid data
 - Metadata preservation works for arbitrary CSV columns
@@ -164,51 +171,54 @@
 - Integrate with Elo engine for rating updates
 
 **Acceptance Criteria**:
+
 - Sessions persist state correctly across application restarts
 - Comparison history maintains complete audit trail
 - State recovery handles corrupted files gracefully
 - Session updates are atomic and thread-safe
 - Integration with Elo engine works seamlessly
 
-#### Task 9: Storage Layer
+#### Task 9: Storage Layer ✅
 
 **Duration**: 3 hours  
 **Dependencies**: Task 8  
 **Parallel**: No
 
-- Create `pkg/data/storage.go` for file-based persistence
-- Implement CSV input parsing with configurable formats
-- Add JSON session file serialization with atomic writes
-- Write storage tests in `pkg/data/storage_test.go`
-- Add backup rotation and corruption recovery
+- ✅ Create `pkg/data/storage.go` for file-based persistence
+- ✅ Implement CSV input parsing with configurable formats
+- ✅ Add JSON session file serialization with atomic writes
+- ✅ Write storage tests in `pkg/data/storage_test.go`
+- ✅ Add backup rotation and corruption recovery
 
 **Acceptance Criteria**:
-- CSV parsing handles various formats and edge cases
-- JSON persistence maintains data integrity
-- Atomic writes prevent file corruption during saves
-- Backup rotation works automatically
-- Storage errors provide actionable error messages
+
+- ✅ CSV parsing handles various formats and edge cases
+- ✅ JSON persistence maintains data integrity
+- ✅ Atomic writes prevent file corruption during saves
+- ✅ Backup rotation works automatically
+- ✅ Storage errors provide actionable error messages
 
 ### Journal & Export Implementation
 
-#### Task 10: Audit Trail System
+#### Task 10: Audit Trail System ✅
 
 **Duration**: 2 hours  
 **Dependencies**: Task 8  
 **Parallel**: [P]
 
-- Create `pkg/journal/audit.go` for comparison logging
-- Implement append-only audit log with JSON Lines format
-- Add audit trail querying and verification functions
-- Write tests in `pkg/journal/audit_test.go` for log integrity
-- Ensure audit logs are tamper-evident and complete
+- ✅ Create `pkg/journal/audit.go` for comparison logging
+- ✅ Implement append-only audit log with JSON Lines format
+- ✅ Add audit trail querying and verification functions
+- ✅ Write tests in `pkg/journal/audit_test.go` for log integrity
+- ✅ Ensure audit logs are tamper-evident and complete
 
 **Acceptance Criteria**:
-- All comparisons logged immediately after completion
-- Audit logs are append-only and immutable
-- Log format enables easy parsing and analysis
-- Audit trail reconstruction matches session state
-- Performance impact <5ms per logged comparison
+
+- ✅ All comparisons logged immediately after completion
+- ✅ Audit logs are append-only and immutable
+- ✅ Log format enables easy parsing and analysis
+- ✅ Audit trail reconstruction matches session state
+- ✅ Performance impact <5ms per logged comparison
 
 #### Task 11: Results Export System
 
@@ -223,6 +233,7 @@
 - Support multiple export formats and custom templates
 
 **Acceptance Criteria**:
+
 - CSV export preserves original structure with new ratings
 - Ranking reports include convergence and confidence metrics
 - Export handles large datasets efficiently
@@ -244,6 +255,7 @@
 - Add keyboard shortcuts and help system
 
 **Acceptance Criteria**:
+
 - TUI library integration works across platforms
 - Screen navigation is intuitive and responsive
 - Application state management is robust
@@ -263,6 +275,7 @@
 - Integrate with Elo engine for real-time rating updates
 
 **Acceptance Criteria**:
+
 - Proposal display shows all relevant information clearly
 - Comparison interface handles keyboard and mouse input
 - Multi-way comparisons work intuitively (drag-and-drop ranking)
@@ -282,6 +295,7 @@
 - Support export initiation from ranking screen
 
 **Acceptance Criteria**:
+
 - Rankings display with clear confidence indicators
 - Sorting and filtering work smoothly for large datasets
 - Search functionality finds proposals quickly
@@ -301,6 +315,7 @@
 - Provide configuration preview and validation feedback
 
 **Acceptance Criteria**:
+
 - File selection works across different operating systems
 - Configuration validation provides immediate feedback
 - Parameter adjustment interface is intuitive
@@ -322,6 +337,7 @@
 - Handle proposals with varying content lengths gracefully
 
 **Acceptance Criteria**:
+
 - Carousel navigation is smooth and intuitive
 - Proposal details display clearly in available space
 - Content overflow handling works correctly
@@ -341,6 +357,7 @@
 - Connect to Elo engine optimization metrics
 
 **Acceptance Criteria**:
+
 - Progress indicators update in real-time during comparisons
 - Convergence metrics display clearly and accurately
 - Completion estimates help users understand remaining work
@@ -362,6 +379,7 @@
 - Support batch mode and interactive mode selection
 
 **Acceptance Criteria**:
+
 - All CLI commands work correctly with proper argument validation
 - Help text provides clear usage instructions
 - Configuration overrides work from command line
@@ -383,6 +401,7 @@
 - Test cross-platform compatibility
 
 **Acceptance Criteria**:
+
 - All quickstart scenarios execute successfully
 - Performance benchmarks pass constitutional requirements
 - Memory usage stays below 100MB for 200 proposals
@@ -402,6 +421,7 @@
 - Validate all documentation matches implementation
 
 **Acceptance Criteria**:
+
 - README provides clear getting-started instructions
 - Code examples work correctly when copy-pasted
 - User guide covers all major features
@@ -475,4 +495,4 @@
 - ✅ Export preserves original data format while adding reliable rankings
 
 ---
-*Generated by /tasks command based on Constitution v1.0.0 and specification 001-build-a-minimalist*
+Generated by /tasks command based on Constitution v1.0.0 and specification 001-build-a-minimalist
