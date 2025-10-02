@@ -26,10 +26,11 @@ var (
 
 // SessionConfig is the top-level configuration for a ranking session
 type SessionConfig struct {
-	CSV    CSVConfig    `yaml:"csv" json:"csv"`
-	Elo    EloConfig    `yaml:"elo" json:"elo"`
-	UI     UIConfig     `yaml:"ui" json:"ui"`
-	Export ExportConfig `yaml:"export" json:"export"`
+	CSV         CSVConfig         `yaml:"csv" json:"csv"`
+	Elo         EloConfig         `yaml:"elo" json:"elo"`
+	UI          UIConfig          `yaml:"ui" json:"ui"`
+	Export      ExportConfig      `yaml:"export" json:"export"`
+	Convergence ConvergenceConfig `yaml:"convergence" json:"convergence"`
 }
 
 // CSVConfig defines how to parse input CSV files
@@ -75,13 +76,25 @@ type ExportConfig struct {
 	RoundDecimals   int    `yaml:"round_decimals" json:"round_decimals"`     // Decimal places for output
 }
 
+// ConvergenceConfig holds settings for intelligent stopping criteria
+type ConvergenceConfig struct {
+	TargetAccepted      int     `yaml:"target_accepted" json:"target_accepted"`               // Number of talks to be accepted (T)
+	TopTStabilityWindow int     `yaml:"top_t_stability_window" json:"top_t_stability_window"` // Window to check top-T stability
+	StabilityThreshold  float64 `yaml:"stability_threshold" json:"stability_threshold"`       // Min rating change to consider stable
+	MinComparisons      int     `yaml:"min_comparisons" json:"min_comparisons"`               // Minimum comparisons before convergence check
+	MaxComparisons      int     `yaml:"max_comparisons" json:"max_comparisons"`               // Hard limit on total comparisons
+	EnableEarlyStopping bool    `yaml:"enable_early_stopping" json:"enable_early_stopping"`   // Whether to use convergence detection
+	ConfidenceThreshold float64 `yaml:"confidence_threshold" json:"confidence_threshold"`     // Min confidence to recommend stopping
+}
+
 // DefaultSessionConfig returns a configuration with sensible defaults
 func DefaultSessionConfig() SessionConfig {
 	return SessionConfig{
-		CSV:    DefaultCSVConfig(),
-		Elo:    DefaultEloConfig(),
-		UI:     DefaultUIConfig(),
-		Export: DefaultExportConfig(),
+		CSV:         DefaultCSVConfig(),
+		Elo:         DefaultEloConfig(),
+		UI:          DefaultUIConfig(),
+		Export:      DefaultExportConfig(),
+		Convergence: DefaultConvergenceConfig(),
 	}
 }
 
@@ -133,6 +146,19 @@ func DefaultExportConfig() ExportConfig {
 		SortOrder:       "desc",
 		ScaleOutput:     true,
 		RoundDecimals:   2,
+	}
+}
+
+// DefaultConvergenceConfig returns convergence detection defaults
+func DefaultConvergenceConfig() ConvergenceConfig {
+	return ConvergenceConfig{
+		TargetAccepted:      10,   // Typical conference acceptance: 10-20 talks
+		TopTStabilityWindow: 5,    // Check stability over last 5 comparisons
+		StabilityThreshold:  5.0,  // <5 point rating changes considered stable
+		MinComparisons:      20,   // Minimum comparisons before early stopping
+		MaxComparisons:      1000, // Hard limit to prevent infinite sessions
+		EnableEarlyStopping: true, // Enable intelligent convergence detection
+		ConfidenceThreshold: 0.8,  // 80% confidence required for early stopping
 	}
 }
 

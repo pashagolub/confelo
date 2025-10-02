@@ -388,27 +388,27 @@
 
 ### Integration & Quality Assurance
 
-#### Task 19: End-to-End Integration Testing
+#### Task 19: End-to-End Integration Testing ✅
 
 **Duration**: 3 hours  
 **Dependencies**: Task 18  
 **Parallel**: No
 
-- Implement full interactive mode
-- Implement complete workflow tests using quickstart.md scenarios
-- Test CSV input → comparison → export pipeline
-- Add performance benchmarks for constitutional compliance
-- Validate memory usage stays within limits
-- Test cross-platform compatibility
+- ✅ Implement full interactive mode
+- ✅ Implement complete workflow tests using quickstart.md scenarios
+- ✅ Test CSV input → comparison → export pipeline
+- ✅ Add performance benchmarks for constitutional compliance
+- ✅ Validate memory usage stays within limits
+- ✅ Test cross-platform compatibility
 
 **Acceptance Criteria**:
 
-- All quickstart scenarios execute successfully
-- Performance benchmarks pass constitutional requirements
-- Memory usage stays below 100MB for 200 proposals
-- Cross-platform testing confirms compatibility
-- Integration tests catch regression issues effectively
-- Interactive mode functions as expected
+- ✅ All quickstart scenarios execute successfully
+- ✅ Performance benchmarks pass constitutional requirements
+- ✅ Memory usage stays below 100MB for 200 proposals
+- ✅ Cross-platform testing confirms compatibility
+- ✅ Integration tests catch regression issues effectively
+- ✅ Interactive mode functions as expected
 
 #### Task 20: Documentation and Polish
 
@@ -456,6 +456,82 @@
 - [ ] User documentation complete and accurate
 - [ ] Export functionality preserves data integrity
 - [ ] Audit trails provide complete comparison history
+
+## Phase 4: Bug Fixes & Improvements
+
+### Bug Fix 1: Progress Display in Trio Mode ✅
+
+**Date**: 2025-10-02  
+**Issue**: UI showed max 15 moves but user needed to make 16 moves. The theoretical max calculation didn't account for convergence mode properly.
+
+**Solution**:
+
+- Updated `pkg/tui/screens/comparison.go::updateProgress()` to show percentage-based progress instead of theoretical maximum
+- Added stability progress indicator showing how close to convergence
+- Changed display format: "Moves: X | Progress: Y% | Stability: Z%"
+- This gives users better feedback on actual progress toward convergence
+
+**Files Modified**: `pkg/tui/screens/comparison.go`
+
+### Bug Fix 2: Confidence Calculation for Tied Scores ✅
+
+**Date**: 2025-10-02  
+**Issue**: Talks with the same score showed identical confidence even when rankings differed. This confused users about ranking quality.
+
+**Solution**:
+
+- Enhanced `pkg/tui/screens/ranking.go::calculateConfidence()` to penalize low comparison counts
+- Added `hasSimilarScores()` helper to detect tie situations
+- Reduced confidence by 20-30% for tied scores with few comparisons (<5)
+- This better signals uncertainty in rankings when scores are very close
+
+**Files Modified**: `pkg/tui/screens/ranking.go`
+
+### Bug Fix 3: Progress Calculation Using Wrong Denominator ✅
+
+**Date**: 2025-10-02  
+**Issue**: Progress showed 2% at move 15/16 because it used MaxComparisons (1000) as denominator instead of realistic expected comparisons.
+
+**Solution**:
+
+- Added `calculateExpectedComparisons()` helper to estimate realistic convergence point based on dataset size and comparison method
+- Small datasets (3-5 proposals) now expect 6-12 comparisons in trio mode
+- Progress now shows realistic percentage: 15/16 = 94% instead of 15/1000 = 2%
+- Formula accounts for method efficiency: trio/quartet cover multiple pairwise games per move
+
+**Files Modified**: `pkg/tui/screens/comparison.go`
+
+### Bug Fix 4: Stability Calculation Not Adapting to Dataset Size ✅
+
+**Date**: 2025-10-02  
+**Issue**: Stability showed 67% at completion because config.TargetAccepted=10 but only 3 proposals existed (2/3=67%).
+
+**Solution**:
+
+- Updated stability calculation to use `min(TargetAccepted, totalProposals)` as denominator
+- With 3 proposals, stability is now 3/3 = 100% when all meet criteria
+- Already had the fix in code but wasn't working due to minIndividualComparisons being too high
+- Added `calculateMinComparisonsForConfidence()` to adjust threshold based on dataset size
+
+**Files Modified**: `pkg/tui/screens/comparison.go`
+
+### Bug Fix 5: Low Confidence for Small Datasets ✅
+
+**Date**: 2025-10-02  
+**Issue**: Talks 3 and 4 showed 23% confidence (red text) even though 2-3 comparisons in a 3-proposal dataset should be reasonable.
+
+**Solution**:
+
+- Adjusted confidence calculation to scale with dataset size
+- Small datasets (≤5 proposals): target 2.5 comparisons for good confidence
+  - 2 comparisons now gives ~55% confidence (was ~33%)
+  - 3 comparisons now gives ~70% confidence (was ~45%)
+- Medium datasets (6-20): target 4.5 comparisons
+- Large datasets (21-50): target 7.0 comparisons
+- Very large datasets (51+): target 10.0 comparisons
+- Reduced penalties for small datasets: 15% penalty for <2 comparisons (was 30%)
+
+**Files Modified**: `pkg/tui/screens/ranking.go`
 
 ## Risk Mitigation
 

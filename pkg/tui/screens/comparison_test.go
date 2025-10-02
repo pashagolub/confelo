@@ -80,11 +80,10 @@ func TestNewComparisonScreen(t *testing.T) {
 	assert.NotNil(t, screen.container)
 	assert.NotNil(t, screen.leftPanel)
 	assert.NotNil(t, screen.rightPanel)
-	assert.NotNil(t, screen.proposalDisplay)
+	assert.NotNil(t, screen.proposalsPanel)
 	assert.NotNil(t, screen.controlPanel)
 	assert.NotNil(t, screen.progressBar)
 	assert.NotNil(t, screen.statusBar)
-	assert.Equal(t, 0, screen.currentIndex)
 	assert.Equal(t, data.MethodPairwise, screen.comparisonMethod)
 }
 
@@ -172,28 +171,24 @@ func TestComparisonScreen_NavigateProposals(t *testing.T) {
 	mockApp := &MockApp{session: createTestSession()}
 	screen.OnEnter(mockApp)
 
-	initialIndex := screen.currentIndex
-
-	// Navigate right
+	// Navigation is now a no-op since all proposals are visible simultaneously
+	// Just verify the method doesn't crash
 	screen.navigateProposals(true)
-	assert.Equal(t, (initialIndex+1)%len(screen.currentProposals), screen.currentIndex)
-
-	// Navigate left
 	screen.navigateProposals(false)
-	assert.Equal(t, initialIndex, screen.currentIndex)
+
+	// Proposals should remain the same
+	assert.NotEmpty(t, screen.currentProposals)
 }
 
 func TestComparisonScreen_NavigateProposalsSingle(t *testing.T) {
 	screen := NewComparisonScreen()
 	screen.currentProposals = []data.Proposal{{ID: "single", Title: "Only One", Score: 1500}}
-	screen.currentIndex = 0
 
-	// Should not change index with single proposal
+	// Navigation is now a no-op - should not panic with single proposal
 	screen.navigateProposals(true)
-	assert.Equal(t, 0, screen.currentIndex)
-
 	screen.navigateProposals(false)
-	assert.Equal(t, 0, screen.currentIndex)
+
+	assert.NotEmpty(t, screen.currentProposals)
 }
 
 func TestComparisonScreen_SetComparisonMode(t *testing.T) {
@@ -282,12 +277,11 @@ func TestComparisonScreen_StartRanking(t *testing.T) {
 
 func TestComparisonScreen_StartRankingInsufficientProposals(t *testing.T) {
 	screen := NewComparisonScreen()
-	mockApp := &MockApp{session: createTestSession()}
-	screen.OnEnter(mockApp) // Default pairwise mode (2 proposals)
+	screen.currentProposals = []data.Proposal{{ID: "single", Title: "Only One", Score: 1500}}
 
 	screen.startRanking()
 
-	// Should not enter ranking mode with only 2 proposals
+	// Should not enter ranking mode with only 1 proposal
 	assert.False(t, screen.isRanking)
 	assert.Empty(t, screen.rankings)
 }
@@ -476,6 +470,9 @@ func TestComparisonScreen_HandleInputPassThrough(t *testing.T) {
 	assert.Equal(t, tcell.KeyUp, result.Key())
 }
 
+// TestComparisonScreen_CreateProposalCard is obsolete - createProposalCard method removed
+// The proposal cards are now created dynamically in the updateDisplay method
+/*
 func TestComparisonScreen_CreateProposalCard(t *testing.T) {
 	screen := NewComparisonScreen()
 	proposal := data.Proposal{
@@ -500,6 +497,7 @@ func TestComparisonScreen_CreateProposalCard(t *testing.T) {
 	assert.Contains(t, text, "1550")
 	assert.Contains(t, text, "tag1, tag2")
 }
+*/
 
 func TestComparisonScreen_UpdateInstructions(t *testing.T) {
 	screen := NewComparisonScreen()
@@ -517,7 +515,7 @@ func TestComparisonScreen_UpdateInstructions(t *testing.T) {
 	screen.startRanking()
 	screen.updateInstructions()
 	text = screen.controlPanel.GetText(false)
-	assert.Contains(t, text, "Ranking Mode Active")
+	assert.Contains(t, text, "Ranking Mode:")
 }
 
 func TestComparisonScreen_UpdateProgress(t *testing.T) {
@@ -583,6 +581,8 @@ func TestComparisonScreen_GetProposalIDsEmpty(t *testing.T) {
 }
 
 // Benchmark tests
+// BenchmarkComparisonScreen_CreateProposalCard is obsolete - method removed
+/*
 func BenchmarkComparisonScreen_CreateProposalCard(b *testing.B) {
 	screen := NewComparisonScreen()
 	proposal := data.Proposal{
@@ -598,6 +598,7 @@ func BenchmarkComparisonScreen_CreateProposalCard(b *testing.B) {
 		screen.createProposalCard(proposal, 1)
 	}
 }
+*/
 
 func BenchmarkComparisonScreen_UpdateDisplay(b *testing.B) {
 	screen := NewComparisonScreen()

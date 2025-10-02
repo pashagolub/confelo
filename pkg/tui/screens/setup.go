@@ -304,11 +304,21 @@ func (ss *SetupScreen) onStartSession() {
 	// Signal to main app to start comparison session
 	ss.updateStatus("Starting session...")
 
-	// In a full implementation, this would communicate with the main app
-	// to load the file and switch to comparison screen
+	// Cast app to TUI App and start session
 	if ss.app != nil {
-		// This is where we'd call app.StartSession(ss.selectedFile, ss.config)
-		ss.updateStatus("Session started successfully")
+		// We need to add an import and cast properly
+		if tuiApp, ok := ss.app.(interface {
+			LoadCsvAndStartSession(string, data.SessionConfig) error
+		}); ok {
+			err := tuiApp.LoadCsvAndStartSession(ss.selectedFile, ss.config)
+			if err != nil {
+				ss.updateStatus(fmt.Sprintf("Error starting session: %v", err))
+				return
+			}
+			ss.updateStatus("Session started successfully")
+		} else {
+			ss.updateStatus("Error: Invalid app instance")
+		}
 	}
 }
 

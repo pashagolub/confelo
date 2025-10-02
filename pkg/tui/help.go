@@ -13,7 +13,7 @@ import (
 type HelpScreen struct {
 	root     *tview.Flex
 	textView *tview.TextView
-	app      *App
+	app      interface{}
 }
 
 // NewHelpScreen creates a new help screen
@@ -33,14 +33,16 @@ func (hs *HelpScreen) GetPrimitive() tview.Primitive {
 }
 
 // OnEnter is called when the help screen becomes active
-func (hs *HelpScreen) OnEnter(app *App) error {
-	hs.app = app
+func (hs *HelpScreen) OnEnter(app interface{}) error {
+	if tuiApp, ok := app.(*App); ok {
+		hs.app = tuiApp
+	}
 	hs.updateContent()
 	return nil
 }
 
 // OnExit is called when leaving the help screen
-func (hs *HelpScreen) OnExit(app *App) error {
+func (hs *HelpScreen) OnExit(app interface{}) error {
 	return nil
 }
 
@@ -74,7 +76,9 @@ func (hs *HelpScreen) setupLayout() {
 		switch event.Key() {
 		case tcell.KeyEsc:
 			if hs.app != nil {
-				go hs.app.GoBack()
+				if tuiApp, ok := hs.app.(*App); ok {
+					go tuiApp.GoBack()
+				}
 			}
 			return nil
 		}
@@ -82,7 +86,9 @@ func (hs *HelpScreen) setupLayout() {
 		switch event.Rune() {
 		case 'q', 'Q':
 			if hs.app != nil {
-				go hs.app.GoBack()
+				if tuiApp, ok := hs.app.(*App); ok {
+					go tuiApp.GoBack()
+				}
 			}
 			return nil
 		}

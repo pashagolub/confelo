@@ -6,6 +6,7 @@ package screens
 import (
 	"fmt"
 	"math"
+	"path/filepath"
 	"sort"
 	"strconv"
 	"strings"
@@ -15,6 +16,7 @@ import (
 	"github.com/rivo/tview"
 
 	"github.com/pashagolub/confelo/pkg/data"
+	"github.com/pashagolub/confelo/pkg/journal"
 )
 
 // SortOrder represents the sorting direction for rankings
@@ -178,7 +180,7 @@ func (rs *RankingScreen) setupUI() {
 		SetTitle(" Export ").
 		SetTitleAlign(tview.AlignLeft)
 	rs.exportPanel.SetDynamicColors(true).
-		SetText("[yellow]Press 'E' to export rankings[white]\n\nAvailable formats:\n• CSV (original + ratings)\n• JSON (detailed report)\n• Text (human readable)")
+		SetText("[yellow]Press 'E' to export rankings[-]\n\nAvailable formats:\n• CSV (original + ratings)\n• JSON (detailed report)\n• Text (human readable)")
 
 	// Configure statistics panel
 	rs.statisticsPanel.SetBorder(true).
@@ -189,12 +191,12 @@ func (rs *RankingScreen) setupUI() {
 	// Configure status bar
 	rs.statusBar.SetDynamicColors(true).
 		SetTextAlign(tview.AlignLeft).
-		SetText("[blue]Ready - Use arrow keys to navigate, 'S' to sort, 'F' to filter[white]")
+		SetText("[blue]Ready - Use arrow keys to navigate, 'S' to sort, 'F' to filter[-]")
 
 	// Configure help bar
 	rs.helpBar.SetDynamicColors(true).
 		SetTextAlign(tview.AlignCenter).
-		SetText("[gray]E:Export  S:Sort  F:Filter  C:Clear  R:Refresh  Q:Back[white]")
+		SetText("[gray]E:Export  S:Sort  F:Filter  C:Clear  R:Refresh  Q:Back[-]")
 
 	// Setup layout
 	rs.sidebarLayout.SetDirection(tview.FlexRow).
@@ -415,10 +417,61 @@ func (rs *RankingScreen) calculateConfidence(proposal data.Proposal) float64 {
 	// Try to get comparison count from the app's session data
 	if appInterface, ok := rs.app.(interface{ GetComparisonCount(proposalID string) int }); ok {
 		count := appInterface.GetComparisonCount(proposal.ID)
-		// Confidence increases with more comparisons, asymptotically approaching 100%
-		// Using logarithmic scale: confidence = 100 * (1 - e^(-count/5))
-		confidence := 100.0 * (1.0 - math.Exp(-float64(count)/5.0))
-		return math.Min(confidence, 100.0)
+
+		// Get total number of proposals to adjust confidence scaling
+		totalProposals := len(rs.proposals)
+
+		// Base confidence on number of comparisons, adjusted for dataset size
+		// For small datasets, fewer comparisons are needed for good confidence
+		// For large datasets, more comparisons are needed
+		var targetComparisons float64
+		switch {
+		case totalProposals <= 5:
+			// Small dataset: 2-3 comparisons is reasonable
+			targetComparisons = 2.5
+		case totalProposals <= 20:
+			// Medium dataset: 4-5 comparisons
+			targetComparisons = 4.5
+		case totalProposals <= 50:
+			// Larger dataset: 6-8 comparisons
+			targetComparisons = 7.0
+		default:
+			// Very large dataset: 10+ comparisons
+			targetComparisons = 10.0
+		}
+
+		// Calculate confidence using adjusted scale
+		// confidence = 100 * (1 - e^(-count/target))
+		// This gives:
+		// - For target=2.5: 1 comp≈33%, 2≈55%, 3≈70%, 5≈86%
+		// - For target=4.5: 3 comp≈48%, 5≈67%, 7≈78%, 10≈89%
+		baseConfidence := 100.0 * (1.0 - math.Exp(-float64(count)/targetComparisons))
+
+		// Apply smaller penalties for small datasets
+		if totalProposals <= 5 {
+			// For very small datasets, be less strict
+			if count < 2 {
+				baseConfidence *= 0.85 // Only 15% penalty
+			}
+		} else {
+			// For larger datasets, apply standard penalties
+			if count < 3 {
+				baseConfidence *= 0.7
+			}
+		}
+
+		// Check if this proposal has the same score as others nearby (within ±1 rating)
+		// This indicates a tie situation with high uncertainty
+		if rs.hasSimilarScores(proposal, 1.0) {
+			// For small datasets with ties, only small penalty
+			if totalProposals <= 5 && count >= 2 {
+				baseConfidence *= 0.9 // Only 10% penalty if we have some comparisons
+			} else if count < 5 {
+				baseConfidence *= 0.8 // Larger penalty for larger datasets or few comparisons
+			}
+		}
+
+		return math.Min(baseConfidence, 100.0)
 	}
 
 	// Fallback: estimate confidence based on score deviation from default
@@ -428,7 +481,28 @@ func (rs *RankingScreen) calculateConfidence(proposal data.Proposal) float64 {
 
 	// Add some randomness to make it look more realistic for testing
 	baseConfidence := 30.0 + (confidence * 0.7)
+
+	// Check for tied scores in fallback mode too
+	if rs.hasSimilarScores(proposal, 1.0) {
+		baseConfidence *= 0.8
+	}
+
 	return math.Min(baseConfidence, 100.0)
+}
+
+// hasSimilarScores checks if there are other proposals with similar scores
+func (rs *RankingScreen) hasSimilarScores(proposal data.Proposal, threshold float64) bool {
+	similarCount := 0
+	for _, other := range rs.proposals {
+		if other.ID == proposal.ID {
+			continue
+		}
+		if math.Abs(other.Score-proposal.Score) <= threshold {
+			similarCount++
+		}
+	}
+	// If 2+ other proposals have similar scores, consider it a tie
+	return similarCount >= 2
 }
 
 // sortProposals sorts the filtered proposals by the current sort criteria
@@ -570,14 +644,14 @@ func (rs *RankingScreen) updateStatusBar() {
 		status += fmt.Sprintf("Search: '%s' | ", rs.filter.SearchText)
 	}
 
-	status += "Use arrow keys to navigate[white]"
+	status += "Use arrow keys to navigate[-]"
 	rs.statusBar.SetText(status)
 }
 
 // updateStatistics updates the statistics panel
 func (rs *RankingScreen) updateStatistics() {
 	if len(rs.filteredProposals) == 0 {
-		rs.statisticsPanel.SetText("[gray]No proposals to show[white]")
+		rs.statisticsPanel.SetText("[gray]No proposals to show[-]")
 		return
 	}
 
@@ -615,15 +689,15 @@ func (rs *RankingScreen) updateStatistics() {
 
 	avgConf := totalConf / float64(len(rs.filteredProposals))
 
-	stats := fmt.Sprintf(`[yellow]Score Statistics:[white]
+	stats := fmt.Sprintf(`[yellow]Score Statistics:[-]
 Average: %.1f
 Range: %.1f - %.1f
 
-[yellow]Confidence:[white]
+[yellow]Confidence:[-]
 Average: %.1f%%
 Range: %.1f%% - %.1f%%
 
-[yellow]Proposals:[white]
+[yellow]Proposals:[-]
 Displayed: %d
 Total: %d`,
 		avgScore, minScore, maxScore,
@@ -684,111 +758,84 @@ func (rs *RankingScreen) initiateExport() {
 	}
 
 	rs.exportInProgress = true
-	rs.exportPanel.SetText("[yellow]Export in progress...[white]\n\nPlease wait while rankings are being exported.")
+	rs.exportPanel.SetText("[yellow]Export in progress...[-]\n\nPlease wait while rankings are being exported.")
 
 	go func() {
 		defer func() {
 			rs.exportInProgress = false
 		}()
 
-		// Try to get the export service from the app
-		var err error
-		if exportInterface, ok := rs.app.(interface{ ExportRankings() error }); ok {
-			err = exportInterface.ExportRankings()
-		} else if appInterface, ok := rs.app.(interface {
-			GetSession() interface{}
-			GetStorage() interface{}
-		}); ok {
-			// Fallback: try to create export directly
-			session := appInterface.GetSession()
-			storage := appInterface.GetStorage()
-
-			// This would use the journal export functionality
-			// For now, simulate the export process
-			time.Sleep(1 * time.Second)
-			err = rs.performExport(session, storage)
-		} else {
-			// Final fallback: just simulate
-			time.Sleep(2 * time.Second)
-		}
+		err := rs.performExport()
 
 		if err != nil {
 			rs.exportPanel.SetText(fmt.Sprintf("[red]Export failed![white]\n\nError: %v\n\nPlease try again or check the logs.", err))
 		} else {
-			rs.exportPanel.SetText("[green]Export completed![white]\n\nRankings exported successfully.\nCheck the output directory for files.")
+			rs.exportPanel.SetText("[green]Export completed![white]\n\nRankings exported successfully.\nCheck the output directory for CSV file.")
 		}
 
 		// Reset the export panel after a delay
 		go func() {
 			time.Sleep(3 * time.Second)
-			rs.exportPanel.SetText("[yellow]Press 'E' to export rankings[white]\n\nAvailable formats:\n• CSV (original + ratings)\n• JSON (detailed report)\n• Text (human readable)")
+			rs.exportPanel.SetText("[yellow]Press 'E' to export rankings[-]\n\nFormat: CSV with original + ratings")
 		}()
 	}()
 }
 
-// performExport handles the actual export logic
-func (rs *RankingScreen) performExport(session interface{}, storage interface{}) error {
-	// This would integrate with the journal export system
-	// For now, just create some mock export files to demonstrate functionality
-
+// performExport handles the actual export logic using journal.Exporter
+func (rs *RankingScreen) performExport() error {
 	timestamp := time.Now().Format("20060102_150405")
+	filename := fmt.Sprintf("rankings_export_%s.csv", timestamp)
 
-	// Create CSV export with rankings
-	csvFilename := fmt.Sprintf("rankings_export_%s.csv", timestamp)
-	if err := rs.exportToCSV(csvFilename); err != nil {
+	// Convert data.Proposal to journal.Proposal format
+	proposals := make([]journal.Proposal, len(rs.filteredProposals))
+	for i, p := range rs.filteredProposals {
+		// Filter out standard fields from metadata to avoid duplication
+		// Standard fields are already exported as dedicated columns
+		filteredMetadata := make(map[string]string)
+		standardFields := map[string]bool{
+			"id": true, "title": true, "abstract": true,
+			"speaker": true, "score": true,
+		}
+
+		for key, value := range p.Metadata {
+			if !standardFields[key] {
+				filteredMetadata[key] = value
+			}
+		}
+
+		proposals[i] = journal.Proposal{
+			ID:       p.ID,
+			Title:    p.Title,
+			Abstract: p.Abstract,
+			Speaker:  p.Speaker,
+			Score:    p.Score,
+			Metadata: filteredMetadata,
+		}
+	}
+
+	// Create a journal.Session for export
+	session := &journal.Session{
+		ID:        fmt.Sprintf("export_%s", timestamp),
+		Name:      "Rankings Export",
+		Proposals: proposals,
+		CreatedAt: time.Now(),
+		UpdatedAt: time.Now(),
+	}
+
+	// Use journal.Exporter for CSV export
+	exporter := journal.NewExporter()
+	err := exporter.ExportToFile(session, filename, journal.ExportOptions{
+		Format:       journal.FormatCSV,
+		IncludeStats: true,
+	})
+
+	if err != nil {
 		return fmt.Errorf("CSV export failed: %w", err)
 	}
 
-	// Create JSON export with detailed data
-	jsonFilename := fmt.Sprintf("rankings_detailed_%s.json", timestamp)
-	if err := rs.exportToJSON(jsonFilename); err != nil {
-		return fmt.Errorf("JSON export failed: %w", err)
-	}
-
-	return nil
-}
-
-// exportToCSV exports rankings to CSV format
-func (rs *RankingScreen) exportToCSV(filename string) error {
-	// Mock CSV export - in real implementation this would use journal.ExportCSV
-	content := "Rank,ID,Title,Speaker,Score,Confidence\n"
-	for i, proposal := range rs.filteredProposals {
-		confidence := rs.calculateConfidence(proposal)
-		content += fmt.Sprintf("%d,%s,\"%s\",\"%s\",%.2f,%.1f%%\n",
-			i+1, proposal.ID, proposal.Title, proposal.Speaker, proposal.Score, confidence)
-	}
-
-	// Simulate file writing
-	rs.statusBar.SetText(fmt.Sprintf("[green]CSV exported to: %s[white]", filename))
-	return nil
-}
-
-// exportToJSON exports rankings to JSON format
-func (rs *RankingScreen) exportToJSON(filename string) error {
-	// Mock JSON export - in real implementation this would use journal.ExportJSON
-	type exportProposal struct {
-		Rank       int     `json:"rank"`
-		ID         string  `json:"id"`
-		Title      string  `json:"title"`
-		Speaker    string  `json:"speaker"`
-		Score      float64 `json:"score"`
-		Confidence float64 `json:"confidence"`
-	}
-
-	var exports []exportProposal
-	for i, proposal := range rs.filteredProposals {
-		exports = append(exports, exportProposal{
-			Rank:       i + 1,
-			ID:         proposal.ID,
-			Title:      proposal.Title,
-			Speaker:    proposal.Speaker,
-			Score:      proposal.Score,
-			Confidence: rs.calculateConfidence(proposal),
-		})
-	}
-
-	// Simulate file writing
-	rs.statusBar.SetText(fmt.Sprintf("[green]JSON exported to: %s[white]", filename))
+	// Get absolute path for display
+	absPath, _ := filepath.Abs(filename)
+	rs.statusBar.SetText(fmt.Sprintf("[green]CSV exported to: %s[white]", absPath))
 	return nil
 }
 
@@ -813,6 +860,7 @@ func (rs *RankingScreen) refreshDisplay() {
 
 // goBack returns to the comparison screen
 func (rs *RankingScreen) goBack() {
-	// This would be implemented to navigate back to the comparison screen
-	// The exact implementation depends on how the app manages screen navigation
+	if appInterface, ok := rs.app.(interface{ SwitchToComparisonScreen() }); ok {
+		appInterface.SwitchToComparisonScreen()
+	}
 }

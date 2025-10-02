@@ -17,6 +17,8 @@ import (
 	"github.com/jessevdk/go-flags"
 
 	"github.com/pashagolub/confelo/pkg/data"
+	"github.com/pashagolub/confelo/pkg/tui"
+	"github.com/pashagolub/confelo/pkg/tui/screens"
 )
 
 // Version information - set by build process
@@ -43,6 +45,7 @@ type StartCommand struct {
 	ComparisonMode string  `long:"comparison-mode" description:"Comparison type (pairwise/trio/quartet)" default:"pairwise"`
 	InitialRating  float64 `long:"initial-rating" description:"Starting Elo rating" default:"1500.0"`
 	OutputScale    string  `long:"output-scale" description:"Output scale format (e.g., '0-10', '1-5')" default:"0-100"`
+	TargetAccepted int     `long:"target-accepted" short:"t" description:"Number of talks to be accepted (for early stopping)" default:"10"`
 	Batch          bool    `long:"batch" description:"Run in batch mode (non-interactive)"`
 
 	Global *GlobalOptions
@@ -52,6 +55,7 @@ type StartCommand struct {
 type ResumeCommand struct {
 	SessionID      string `long:"session-id" description:"Identifier of existing session to resume" required:"true"`
 	ComparisonMode string `long:"comparison-mode" description:"Override comparison mode"`
+	TargetAccepted int    `long:"target-accepted" short:"t" description:"Override target accepted talks"`
 	Batch          bool   `long:"batch" description:"Run in batch mode (non-interactive)"`
 
 	Global *GlobalOptions
@@ -315,6 +319,10 @@ func (c *ResumeCommand) Execute(args []string) error {
 	// Override comparison mode if specified
 	if c.ComparisonMode != "" {
 		config.UI.ComparisonMode = c.ComparisonMode
+	}
+	// Override target accepted if specified
+	if c.TargetAccepted > 0 {
+		config.Convergence.TargetAccepted = c.TargetAccepted
 	}
 
 	// Create storage
@@ -669,6 +677,35 @@ func applyStartConfigOverrides(config *data.SessionConfig, cmd *StartCommand) {
 			}
 		}
 	}
+	if cmd.TargetAccepted > 0 {
+		config.Convergence.TargetAccepted = cmd.TargetAccepted
+	}
+
+	// Adjust MinComparisons based on comparison method and expected complexity
+	// This prevents the bug where MinComparisons exceeds theoretical maximum
+	adjustMinComparisons(config)
+}
+
+// adjustMinComparisons dynamically sets MinComparisons based on comparison method
+// to prevent convergence detection bugs where MinComparisons exceeds theoretical maximum
+func adjustMinComparisons(config *data.SessionConfig) {
+	// For efficient convergence detection, use a lower minimum for trio/quartet modes
+	// This ensures convergence detection can work even with smaller datasets
+
+	switch strings.ToLower(config.UI.ComparisonMode) {
+	case "trio":
+		// Trio mode needs fewer comparisons - use lower minimum
+		// This allows convergence detection to work with small datasets
+		config.Convergence.MinComparisons = 5 // Conservative minimum for trio mode
+	case "quartet":
+		// Quartet mode is most efficient - use even lower minimum
+		config.Convergence.MinComparisons = 3 // Conservative minimum for quartet mode
+	default:
+		// Pairwise mode: keep reasonable minimum but not too high
+		if config.Convergence.MinComparisons > 15 {
+			config.Convergence.MinComparisons = 15 // Reasonable maximum for any dataset
+		}
+	}
 }
 
 func generateSessionID() string {
@@ -689,22 +726,14 @@ func runBatchMode(session *data.Session, config *data.SessionConfig, storage dat
 }
 
 func runInteractiveMode(session *data.Session, config *data.SessionConfig, storage data.Storage) error {
-	// For now, provide a message that interactive mode needs screen setup
-	// This is a placeholder until the TUI screen registration is properly implemented
-	fmt.Printf("Interactive mode started for session: %s\n", session.ID)
-	fmt.Printf("Session: %s (%s)\n", session.Name, session.ID)
-	fmt.Printf("Proposals loaded: %d\n", len(session.Proposals))
-	fmt.Println()
-	fmt.Println("Interactive TUI mode is not fully implemented yet.")
-	fmt.Println("The TUI screens need to be properly integrated with the CLI interface.")
-	fmt.Println()
-	fmt.Printf("To export the session results, use:\n")
-	fmt.Printf("  confelo export --session-id %s --output rankings.csv\n", session.ID)
-	fmt.Println()
-	fmt.Printf("To resume this session later, use:\n")
-	fmt.Printf("  confelo resume --session-id %s\n", session.ID)
+	// Import TUI components - we need to add these imports at the top
+	tuiApp, err := createTUIApp(session, config, storage)
+	if err != nil {
+		return fmt.Errorf("failed to create TUI application: %w", err)
+	}
 
-	return nil
+	// Start the TUI application
+	return tuiApp.Run()
 }
 
 func outputSessionsJSON(sessions []*data.Session) error {
@@ -789,6 +818,40 @@ func outputSessionsTable(sessions []*data.Session) error {
 	}
 
 	return nil
+}
+
+// createTUIApp creates and configures the TUI application with all screens
+func createTUIApp(session *data.Session, config *data.SessionConfig, storage data.Storage) (*tui.App, error) {
+	// Create the main TUI application
+	app, err := tui.NewApp(config, storage)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create TUI app: %w", err)
+	}
+
+	// Set the current session
+	app.SetSession(session)
+
+	// Create and register screens
+	setupScreen := screens.NewSetupScreen()
+	comparisonScreen := screens.NewComparisonScreen()
+	rankingScreen := screens.NewRankingScreen()
+	helpScreen := tui.NewHelpScreen()
+
+	// Register screens with the app
+	if err := app.RegisterScreen(tui.ScreenSetup, setupScreen); err != nil {
+		return nil, fmt.Errorf("failed to register setup screen: %w", err)
+	}
+	if err := app.RegisterScreen(tui.ScreenComparison, comparisonScreen); err != nil {
+		return nil, fmt.Errorf("failed to register comparison screen: %w", err)
+	}
+	if err := app.RegisterScreen(tui.ScreenRanking, rankingScreen); err != nil {
+		return nil, fmt.Errorf("failed to register ranking screen: %w", err)
+	}
+	if err := app.RegisterScreen(tui.ScreenHelp, helpScreen); err != nil {
+		return nil, fmt.Errorf("failed to register help screen: %w", err)
+	}
+
+	return app, nil
 }
 
 func min(a, b int) int {

@@ -97,8 +97,8 @@ type mockScreen struct {
 	title       string
 	helpText    []string
 	primitive   *testPrimitive
-	onEnterFunc func(app *App) error
-	onExitFunc  func(app *App) error
+	onEnterFunc func(app interface{}) error
+	onExitFunc  func(app interface{}) error
 }
 
 type testPrimitive struct {
@@ -133,14 +133,14 @@ func (ms *mockScreen) GetPrimitive() tview.Primitive {
 	return ms.primitive
 }
 
-func (ms *mockScreen) OnEnter(app *App) error {
+func (ms *mockScreen) OnEnter(app interface{}) error {
 	if ms.onEnterFunc != nil {
 		return ms.onEnterFunc(app)
 	}
 	return nil
 }
 
-func (ms *mockScreen) OnExit(app *App) error {
+func (ms *mockScreen) OnExit(app interface{}) error {
 	if ms.onExitFunc != nil {
 		return ms.onExitFunc(app)
 	}
@@ -358,11 +358,11 @@ func TestAppScreenCallbacks(t *testing.T) {
 	exitCalled := false
 
 	mockScreen := newMockScreen("Test")
-	mockScreen.onEnterFunc = func(app *App) error {
+	mockScreen.onEnterFunc = func(app interface{}) error {
 		enterCalled = true
 		return nil
 	}
-	mockScreen.onExitFunc = func(app *App) error {
+	mockScreen.onExitFunc = func(app interface{}) error {
 		exitCalled = true
 		return nil
 	}
@@ -394,7 +394,7 @@ func TestAppErrorHandling(t *testing.T) {
 
 	// Test screen with OnEnter error
 	mockScreen := newMockScreen("Error Screen")
-	mockScreen.onEnterFunc = func(app *App) error {
+	mockScreen.onEnterFunc = func(app interface{}) error {
 		return assert.AnError
 	}
 

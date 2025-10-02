@@ -7,6 +7,7 @@ import (
 	"context"
 	"fmt"
 	"sync"
+	"time"
 
 	"github.com/gdamore/tcell/v2"
 	"github.com/rivo/tview"
@@ -46,10 +47,10 @@ type Screen interface {
 	GetPrimitive() tview.Primitive
 
 	// OnEnter is called when the screen becomes active
-	OnEnter(app *App) error
+	OnEnter(app interface{}) error
 
 	// OnExit is called when leaving the screen
-	OnExit(app *App) error
+	OnExit(app interface{}) error
 
 	// GetTitle returns the screen title for display
 	GetTitle() string
@@ -94,11 +95,7 @@ type KeyBinding struct {
 var globalKeyBindings = []KeyBinding{
 	{Key: tcell.KeyF1, Description: "Show help", Handler: (*App).ShowHelp},
 	{Key: tcell.KeyEsc, Description: "Go back/Exit", Handler: (*App).GoBack},
-	{Key: tcell.KeyCtrlC, Description: "Exit application", Handler: (*App).Exit},
-	{Key: tcell.KeyCtrlQ, Description: "Quit application", Handler: (*App).Exit},
-	{Rune: 'q', Description: "Quit application", Handler: (*App).Exit},
-	{Rune: 'h', Description: "Show help", Handler: (*App).ShowHelp},
-	{Rune: '?', Description: "Show help", Handler: (*App).ShowHelp},
+	{Key: tcell.KeyCtrlR, Description: "Show rankings", Handler: (*App).ShowRanking},
 }
 
 // NewApp creates a new TUI application instance
@@ -203,28 +200,38 @@ func (a *App) RegisterScreen(screenType ScreenType, screen Screen) error {
 // NavigateTo switches to the specified screen
 func (a *App) NavigateTo(screenType ScreenType) error {
 	a.state.mu.Lock()
-	defer a.state.mu.Unlock()
 
 	screen, exists := a.screens[screenType]
 	if !exists {
+		a.state.mu.Unlock()
 		return fmt.Errorf("screen %s not registered", screenType.String())
 	}
 
-	// Exit current screen
-	if currentScreen, exists := a.screens[a.state.currentScreen]; exists {
+	// Get current screen for exit
+	currentScreen, hasCurrentScreen := a.screens[a.state.currentScreen]
+	previousScreen := a.state.currentScreen
+
+	a.state.mu.Unlock()
+
+	// Exit current screen (without lock to avoid deadlock)
+	if hasCurrentScreen {
 		if err := currentScreen.OnExit(a); err != nil {
-			return fmt.Errorf("failed to exit screen %s: %w", a.state.currentScreen.String(), err)
+			return fmt.Errorf("failed to exit screen %s: %w", previousScreen.String(), err)
 		}
 	}
 
-	// Update state
+	// Update state (with lock)
+	a.state.mu.Lock()
 	a.state.previousScreen = a.state.currentScreen
 	a.state.currentScreen = screenType
+	a.state.mu.Unlock()
 
-	// Enter new screen
+	// Enter new screen (without lock to avoid deadlock)
 	if err := screen.OnEnter(a); err != nil {
 		// Restore previous screen on error
+		a.state.mu.Lock()
 		a.state.currentScreen = a.state.previousScreen
+		a.state.mu.Unlock()
 		return fmt.Errorf("failed to enter screen %s: %w", screenType.String(), err)
 	}
 
@@ -255,6 +262,11 @@ func (a *App) ShowHelp() error {
 	return a.NavigateTo(ScreenHelp)
 }
 
+// ShowRanking displays the ranking screen
+func (a *App) ShowRanking() error {
+	return a.NavigateTo(ScreenRanking)
+}
+
 // Exit stops the application
 func (a *App) Exit() error {
 	a.state.mu.Lock()
@@ -271,11 +283,19 @@ func (a *App) Exit() error {
 func (a *App) Run() error {
 	a.state.mu.Lock()
 	a.state.isRunning = true
+	hasSession := a.state.session != nil && len(a.state.session.Proposals) > 0
 	a.state.mu.Unlock()
 
-	// Start with the setup screen
-	if err := a.NavigateTo(ScreenSetup); err != nil {
-		return fmt.Errorf("failed to navigate to setup screen: %w", err)
+	// If we already have a session with proposals, go directly to comparison
+	// Otherwise start with the setup screen
+	if hasSession {
+		if err := a.NavigateTo(ScreenComparison); err != nil {
+			return fmt.Errorf("failed to navigate to comparison screen: %w", err)
+		}
+	} else {
+		if err := a.NavigateTo(ScreenSetup); err != nil {
+			return fmt.Errorf("failed to navigate to setup screen: %w", err)
+		}
 	}
 
 	// Run the application
@@ -322,6 +342,18 @@ func (a *App) GetSession() *data.Session {
 	return a.state.session
 }
 
+// GetProposals returns all proposals from the current session
+func (a *App) GetProposals() ([]data.Proposal, error) {
+	a.state.mu.RLock()
+	defer a.state.mu.RUnlock()
+
+	if a.state.session == nil {
+		return nil, fmt.Errorf("no active session")
+	}
+
+	return a.state.session.Proposals, nil
+}
+
 // GetStorage returns the storage interface
 func (a *App) GetStorage() data.Storage {
 	a.state.mu.RLock()
@@ -339,6 +371,29 @@ func (a *App) GetConfig() *data.SessionConfig {
 // GetTViewApp returns the underlying tview application for advanced usage
 func (a *App) GetTViewApp() *tview.Application {
 	return a.tviewApp
+}
+
+// GetComparisonCount returns how many comparisons a specific proposal has participated in
+func (a *App) GetComparisonCount(proposalID string) int {
+	a.state.mu.RLock()
+	defer a.state.mu.RUnlock()
+
+	if a.state.session == nil {
+		return 0
+	}
+
+	count := 0
+	for _, comparison := range a.state.session.CompletedComparisons {
+		// Check if this proposal was involved in this comparison
+		for _, id := range comparison.ProposalIDs {
+			if id == proposalID {
+				count++
+				break // Only count once per comparison
+			}
+		}
+	}
+
+	return count
 }
 
 // handleGlobalInput handles global keyboard shortcuts
@@ -419,4 +474,34 @@ func (a *App) GetCurrentScreen() ScreenType {
 	a.state.mu.RLock()
 	defer a.state.mu.RUnlock()
 	return a.state.currentScreen
+}
+
+// LoadCsvAndStartSession loads a CSV file, creates a session, and navigates to comparison
+func (a *App) LoadCsvAndStartSession(csvPath string, config data.SessionConfig) error {
+	// Load proposals from CSV
+	parseResult, err := a.state.storage.LoadProposalsFromCSV(csvPath, config.CSV)
+	if err != nil {
+		return fmt.Errorf("failed to load CSV: %w", err)
+	}
+
+	// Create new session with loaded proposals
+	session := &data.Session{
+		ID:        fmt.Sprintf("session_%d", time.Now().Unix()),
+		Name:      fmt.Sprintf("Session %s", time.Now().Format("2006-01-02 15:04")),
+		Status:    "active",
+		CreatedAt: time.Now(),
+		UpdatedAt: time.Now(),
+		Proposals: parseResult.Proposals,
+	}
+
+	// Update app state
+	a.SetSession(session)
+
+	// Update configuration
+	a.state.mu.Lock()
+	a.state.config = &config
+	a.state.mu.Unlock()
+
+	// Navigate to comparison screen
+	return a.NavigateTo(ScreenComparison)
 }
