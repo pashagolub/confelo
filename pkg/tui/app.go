@@ -19,8 +19,7 @@ import (
 type ScreenType int
 
 const (
-	ScreenSetup ScreenType = iota
-	ScreenComparison
+	ScreenComparison ScreenType = iota
 	ScreenRanking
 	ScreenHelp
 )
@@ -28,8 +27,6 @@ const (
 // String returns the string representation of ScreenType
 func (s ScreenType) String() string {
 	switch s {
-	case ScreenSetup:
-		return "setup"
 	case ScreenComparison:
 		return "comparison"
 	case ScreenRanking:
@@ -117,7 +114,7 @@ func NewApp(config *data.SessionConfig, storage data.Storage) (*App, error) {
 		state: &AppState{
 			config:        config,
 			storage:       storage,
-			currentScreen: ScreenSetup,
+			currentScreen: ScreenComparison,
 			isRunning:     false,
 		},
 		screens: make(map[ScreenType]Screen),
@@ -248,8 +245,8 @@ func (a *App) GoBack() error {
 	previous := a.state.previousScreen
 	a.state.mu.RUnlock()
 
-	// If we're at setup screen, exit the application
-	if current == ScreenSetup {
+	// If we're at comparison screen (which is now the first screen), exit the application
+	if current == ScreenComparison {
 		return a.Exit()
 	}
 
@@ -283,19 +280,12 @@ func (a *App) Exit() error {
 func (a *App) Run() error {
 	a.state.mu.Lock()
 	a.state.isRunning = true
-	hasSession := a.state.session != nil && len(a.state.session.Proposals) > 0
 	a.state.mu.Unlock()
 
-	// If we already have a session with proposals, go directly to comparison
-	// Otherwise start with the setup screen
-	if hasSession {
-		if err := a.NavigateTo(ScreenComparison); err != nil {
-			return fmt.Errorf("failed to navigate to comparison screen: %w", err)
-		}
-	} else {
-		if err := a.NavigateTo(ScreenSetup); err != nil {
-			return fmt.Errorf("failed to navigate to setup screen: %w", err)
-		}
+	// Always start with the comparison screen
+	// The configuration is now handled via command-line parameters
+	if err := a.NavigateTo(ScreenComparison); err != nil {
+		return fmt.Errorf("failed to navigate to comparison screen: %w", err)
 	}
 
 	// Run the application

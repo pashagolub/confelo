@@ -832,15 +832,11 @@ func createTUIApp(session *data.Session, config *data.SessionConfig, storage dat
 	app.SetSession(session)
 
 	// Create and register screens
-	setupScreen := screens.NewSetupScreen()
 	comparisonScreen := screens.NewComparisonScreen()
 	rankingScreen := screens.NewRankingScreen()
 	helpScreen := tui.NewHelpScreen()
 
 	// Register screens with the app
-	if err := app.RegisterScreen(tui.ScreenSetup, setupScreen); err != nil {
-		return nil, fmt.Errorf("failed to register setup screen: %w", err)
-	}
 	if err := app.RegisterScreen(tui.ScreenComparison, comparisonScreen); err != nil {
 		return nil, fmt.Errorf("failed to register comparison screen: %w", err)
 	}
