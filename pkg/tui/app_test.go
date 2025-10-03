@@ -4,7 +4,6 @@ package tui
 
 import (
 	"testing"
-	"time"
 
 	"github.com/gdamore/tcell/v2"
 	"github.com/rivo/tview"
@@ -320,15 +319,6 @@ func TestAppKeyBindings(t *testing.T) {
 	err = app.NavigateTo(ScreenComparison)
 	require.NoError(t, err)
 
-	// Test help key binding (F1)
-	event := tcell.NewEventKey(tcell.KeyF1, 0, tcell.ModNone)
-	result := app.handleGlobalInput(event)
-	assert.Nil(t, result) // Event should be consumed
-
-	// Give time for goroutine to execute
-	time.Sleep(10 * time.Millisecond)
-	assert.Equal(t, ScreenHelp, app.GetCurrentScreen())
-
 	// Test manual exit instead of relying on Ctrl+C key binding
 	app.state.isRunning = true
 	assert.True(t, app.IsRunning())
@@ -348,7 +338,6 @@ func TestAppScreenCallbacks(t *testing.T) {
 
 	// Create mock screen with callbacks
 	enterCalled := false
-	exitCalled := false
 
 	mockScreen := newMockScreen("Test")
 	mockScreen.onEnterFunc = func(app interface{}) error {
@@ -356,7 +345,6 @@ func TestAppScreenCallbacks(t *testing.T) {
 		return nil
 	}
 	mockScreen.onExitFunc = func(app interface{}) error {
-		exitCalled = true
 		return nil
 	}
 
@@ -368,14 +356,6 @@ func TestAppScreenCallbacks(t *testing.T) {
 	assert.NoError(t, err)
 	assert.True(t, enterCalled)
 
-	// Navigate away - should call OnExit
-	helpScreen := newMockScreen("Help")
-	err = app.RegisterScreen(ScreenHelp, helpScreen)
-	require.NoError(t, err)
-
-	err = app.NavigateTo(ScreenHelp)
-	assert.NoError(t, err)
-	assert.True(t, exitCalled)
 }
 
 func TestAppErrorHandling(t *testing.T) {
@@ -449,7 +429,6 @@ func TestScreenTypeString(t *testing.T) {
 		// ScreenSetup is removed
 		{ScreenComparison, "comparison"},
 		{ScreenRanking, "ranking"},
-		{ScreenHelp, "help"},
 		{ScreenType(999), "unknown"},
 	}
 

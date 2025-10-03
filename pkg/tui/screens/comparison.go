@@ -1159,18 +1159,16 @@ func (cs *ComparisonScreen) updateProgress() {
 	var convergenceStatus string
 
 	// Check if we have convergence configuration and early stopping is enabled
-	if config != nil && config.Convergence.EnableEarlyStopping {
+	if config.Convergence.EnableEarlyStopping {
 		// Check top-T convergence instead of all comparisons
 		if cs.checkTopTConvergence() {
 			convergenceStatus = fmt.Sprintf(" [green]Top-%d Stable![-]", config.Convergence.TargetAccepted)
-		} else if completed >= config.Convergence.MinComparisons {
-			convergenceStatus = " [yellow]Analyzing...[-]"
 		}
 	}
 
 	// Use convergence-aware display
 	var progress string
-	if config != nil && config.Convergence.EnableEarlyStopping {
+	if config.Convergence.EnableEarlyStopping {
 		// Calculate realistic expected comparisons based on dataset size and method
 		// This gives a much better progress estimate than using MaxComparisons limit
 		expectedComparisons := cs.calculateExpectedComparisons(totalProposals, config)
@@ -1194,18 +1192,14 @@ func (cs *ComparisonScreen) updateProgress() {
 			stableCount := 0
 			// Use the smaller of TargetAccepted or actual proposal count
 			// This prevents showing 67% when we only have 3 proposals
-			targetTop := config.Convergence.TargetAccepted
-			if targetTop > len(sortedProposals) {
-				targetTop = len(sortedProposals)
-			}
+			targetTop := min(config.Convergence.TargetAccepted, len(sortedProposals))
 
 			// Adjust minimum comparisons based on dataset size and method
 			minIndividualComparisons := cs.calculateMinComparisonsForConfidence(totalProposals)
 
-			for i := 0; i < targetTop; i++ {
+			for i := range targetTop {
 				proposalID := sortedProposals[i].ID
-				individualCount := cs.getProposalComparisonCount(proposalID, session)
-				if individualCount >= minIndividualComparisons {
+				if cs.getProposalComparisonCount(proposalID, session) >= minIndividualComparisons {
 					stableCount++
 				}
 			}

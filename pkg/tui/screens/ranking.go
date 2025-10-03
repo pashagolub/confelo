@@ -282,10 +282,6 @@ func (rs *RankingScreen) setupKeyBindings() {
 		case tcell.KeyTab:
 			// Focus filter form
 			return nil // Let default tab handling work
-		case tcell.KeyEsc:
-			// Go back to comparison screen
-			rs.goBack()
-			return nil
 		}
 
 		switch event.Rune() {
@@ -306,9 +302,6 @@ func (rs *RankingScreen) setupKeyBindings() {
 			return nil
 		case 'r', 'R':
 			rs.refreshDisplay()
-			return nil
-		case 'q', 'Q':
-			rs.goBack()
 			return nil
 		}
 
@@ -856,11 +849,4 @@ func (rs *RankingScreen) refreshDisplay() {
 		time.Sleep(2 * time.Second)
 		rs.updateStatusBar()
 	}()
-}
-
-// goBack returns to the comparison screen
-func (rs *RankingScreen) goBack() {
-	if appInterface, ok := rs.app.(interface{ SwitchToComparisonScreen() }); ok {
-		appInterface.SwitchToComparisonScreen()
-	}
 }

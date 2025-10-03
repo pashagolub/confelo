@@ -21,7 +21,6 @@ type ScreenType int
 const (
 	ScreenComparison ScreenType = iota
 	ScreenRanking
-	ScreenHelp
 )
 
 // String returns the string representation of ScreenType
@@ -31,8 +30,6 @@ func (s ScreenType) String() string {
 		return "comparison"
 	case ScreenRanking:
 		return "ranking"
-	case ScreenHelp:
-		return "help"
 	default:
 		return "unknown"
 	}
@@ -90,9 +87,9 @@ type KeyBinding struct {
 
 // Global key bindings available across all screens
 var globalKeyBindings = []KeyBinding{
-	{Key: tcell.KeyF1, Description: "Show help", Handler: (*App).ShowHelp},
-	{Key: tcell.KeyEsc, Description: "Go back/Exit", Handler: (*App).GoBack},
-	{Key: tcell.KeyCtrlR, Description: "Show rankings", Handler: (*App).ShowRanking},
+	{Key: tcell.KeyCtrlC, Description: "Exit", Handler: (*App).Exit},
+	{Key: tcell.KeyRune, Rune: 'r', Description: "Show rankings", Handler: (*App).ShowRanking},
+	{Key: tcell.KeyRune, Rune: 'c', Description: "Show comparisons", Handler: (*App).ShowComparison},
 }
 
 // NewApp creates a new TUI application instance
@@ -254,14 +251,14 @@ func (a *App) GoBack() error {
 	return a.NavigateTo(previous)
 }
 
-// ShowHelp displays the help screen
-func (a *App) ShowHelp() error {
-	return a.NavigateTo(ScreenHelp)
-}
-
 // ShowRanking displays the ranking screen
 func (a *App) ShowRanking() error {
 	return a.NavigateTo(ScreenRanking)
+}
+
+// ShowComparison displays the comparison screen
+func (a *App) ShowComparison() error {
+	return a.NavigateTo(ScreenComparison)
 }
 
 // Exit stops the application
