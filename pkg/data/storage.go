@@ -186,7 +186,7 @@ func (fs *FileStorage) parseCSVFromReader(reader io.Reader, config CSVConfig) (*
 			continue
 		}
 
-		proposal, err := fs.parseProposalFromRow(row, rowIdx+1, headers, idCol, titleCol, speakerCol, abstractCol, scoreCol, conflictCol, config)
+		proposal, err := fs.parseProposalFromRow(row, rowIdx+1, headers, idCol, titleCol, speakerCol, abstractCol, scoreCol, conflictCol)
 		if err != nil {
 			if csvErr, ok := err.(CSVParseError); ok {
 				parseErrors = append(parseErrors, csvErr)
@@ -260,7 +260,7 @@ func (fs *FileStorage) isEmptyRow(row []string) bool {
 }
 
 // parseProposalFromRow creates a Proposal from a CSV row
-func (fs *FileStorage) parseProposalFromRow(row []string, rowNum int, headers []string, idCol, titleCol, speakerCol, abstractCol, scoreCol, conflictCol int, config CSVConfig) (*Proposal, error) {
+func (fs *FileStorage) parseProposalFromRow(row []string, rowNum int, headers []string, idCol, titleCol, speakerCol, abstractCol, scoreCol, conflictCol int) (*Proposal, error) {
 	// Validate row has enough columns
 	maxCol := fs.maxIndex(idCol, titleCol, speakerCol, abstractCol, scoreCol, conflictCol)
 	if len(row) <= maxCol {

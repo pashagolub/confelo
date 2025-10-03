@@ -28,7 +28,31 @@ var (
 	ErrComparisonNotActive   = errors.New("no active comparison")
 	ErrInvalidComparison     = errors.New("invalid comparison data")
 	ErrAtomicOperationFailed = errors.New("atomic operation failed")
+	ErrModeDetectionFailed   = errors.New("session mode detection failed")
+	ErrSessionNameInvalid    = errors.New("session name contains invalid characters")
 )
+
+// SessionMode represents the detected operational mode for automatic mode detection
+type SessionMode int
+
+const (
+	// StartMode indicates a new session should be created
+	StartMode SessionMode = iota
+	// ResumeMode indicates an existing session should be resumed
+	ResumeMode
+)
+
+// String returns a string representation of the SessionMode
+func (sm SessionMode) String() string {
+	switch sm {
+	case StartMode:
+		return "Start"
+	case ResumeMode:
+		return "Resume"
+	default:
+		return "Unknown"
+	}
+}
 
 // SessionStatus represents the current state of a ranking session
 type SessionStatus string
@@ -1913,4 +1937,148 @@ func min(a, b int) int {
 		return a
 	}
 	return b
+}
+
+// SessionDetector provides session existence detection and mode determination
+type SessionDetector struct {
+	sessionsDir string
+}
+
+// NewSessionDetector creates a new session detector for the specified sessions directory
+func NewSessionDetector(sessionsDir string) *SessionDetector {
+	return &SessionDetector{
+		sessionsDir: sessionsDir,
+	}
+}
+
+// DetectMode determines whether to start a new session or resume an existing one
+// based on the session name and existing session files
+func (sd *SessionDetector) DetectMode(sessionName string) (SessionMode, error) {
+	// Validate session name first
+	if err := sd.validateSessionName(sessionName); err != nil {
+		return StartMode, fmt.Errorf("%w: %v", ErrSessionNameInvalid, err)
+	}
+
+	// Ensure sessions directory exists
+	if err := sd.ensureSessionsDirectory(); err != nil {
+		return StartMode, fmt.Errorf("%w: failed to access sessions directory: %v", ErrModeDetectionFailed, err)
+	}
+
+	// Look for existing session files matching the session name
+	sessionFile, err := sd.FindSessionFile(sessionName)
+	if err != nil {
+		return StartMode, fmt.Errorf("%w: %v", ErrModeDetectionFailed, err)
+	}
+
+	if sessionFile == "" {
+		// No existing session found - start new session
+		return StartMode, nil
+	}
+
+	// Validate the found session file
+	if err := sd.ValidateSession(sessionFile); err != nil {
+		return StartMode, fmt.Errorf("%w: session file corrupted: %v", ErrSessionCorrupted, err)
+	}
+
+	// Valid existing session found - resume mode
+	return ResumeMode, nil
+}
+
+// FindSessionFile locates a session file by session name
+// Returns empty string if no session file is found
+func (sd *SessionDetector) FindSessionFile(sessionName string) (string, error) {
+	if sessionName == "" {
+		return "", fmt.Errorf("session name cannot be empty")
+	}
+
+	// Scan the sessions directory for files matching the pattern
+	pattern := fmt.Sprintf("session_%s_*.json", sessionName)
+	matches, err := filepath.Glob(filepath.Join(sd.sessionsDir, pattern))
+	if err != nil {
+		return "", fmt.Errorf("failed to scan sessions directory: %w", err)
+	}
+
+	if len(matches) == 0 {
+		return "", nil // No session found
+	}
+
+	// Return the first match (sessions should have unique names)
+	return matches[0], nil
+}
+
+// ValidateSession validates the integrity of a session file
+func (sd *SessionDetector) ValidateSession(sessionPath string) error {
+	if sessionPath == "" {
+		return fmt.Errorf("session path cannot be empty")
+	}
+
+	// Check if file exists and is readable
+	file, err := os.Open(sessionPath)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return fmt.Errorf("session file not found: %s", sessionPath)
+		}
+		return fmt.Errorf("cannot read session file: %w", err)
+	}
+	defer file.Close()
+
+	// Validate JSON structure by attempting to decode
+	var sessionData map[string]any
+	decoder := json.NewDecoder(file)
+	if err := decoder.Decode(&sessionData); err != nil {
+		return fmt.Errorf("invalid JSON in session file: %w", err)
+	}
+
+	// Check for required fields
+	requiredFields := []string{"id", "name", "created_at", "config"}
+	for _, field := range requiredFields {
+		if _, exists := sessionData[field]; !exists {
+			return fmt.Errorf("missing required field '%s' in session file", field)
+		}
+	}
+
+	return nil
+}
+
+// validateSessionName validates the session name for filesystem safety
+func (sd *SessionDetector) validateSessionName(name string) error {
+	if name == "" {
+		return fmt.Errorf("session name cannot be empty")
+	}
+
+	// Check for invalid filesystem characters
+	invalidChars := `<>:"/\|?*`
+	if strings.ContainsAny(name, invalidChars) {
+		return fmt.Errorf("session name contains invalid characters: %s", name)
+	}
+
+	// Check for reserved names (Windows)
+	reservedNames := []string{"CON", "PRN", "AUX", "NUL", "COM1", "COM2", "COM3", "COM4", "COM5", "COM6", "COM7", "COM8", "COM9", "LPT1", "LPT2", "LPT3", "LPT4", "LPT5", "LPT6", "LPT7", "LPT8", "LPT9"}
+	upperName := strings.ToUpper(name)
+	for _, reserved := range reservedNames {
+		if upperName == reserved {
+			return fmt.Errorf("session name '%s' is reserved", name)
+		}
+	}
+
+	return nil
+}
+
+// ensureSessionsDirectory creates the sessions directory if it doesn't exist
+func (sd *SessionDetector) ensureSessionsDirectory() error {
+	if sd.sessionsDir == "" {
+		return fmt.Errorf("sessions directory path is empty")
+	}
+
+	// Check if directory exists
+	if _, err := os.Stat(sd.sessionsDir); os.IsNotExist(err) {
+		// Create directory with appropriate permissions
+		if err := os.MkdirAll(sd.sessionsDir, 0755); err != nil {
+			return fmt.Errorf("failed to create sessions directory: %w", err)
+		}
+	} else if err != nil {
+		return fmt.Errorf("failed to access sessions directory: %w", err)
+	}
+
+	return nil
 }

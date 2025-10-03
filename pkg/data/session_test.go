@@ -1,6 +1,7 @@
 package data
 
 import (
+	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -653,5 +654,387 @@ func TestSessionManagementUtils(t *testing.T) {
 		require.NoError(t, err)
 		assert.Len(t, sessions, 1)
 		assert.NotContains(t, sessions, session2.ID)
+	})
+}
+
+// TestSessionDetectionContract tests the SessionDetector interface
+// This validates the contract specified in session-contract.md
+func TestSessionDetectionContract(t *testing.T) {
+	tempDir := t.TempDir()
+	sessionsDir := filepath.Join(tempDir, "sessions")
+	err := os.MkdirAll(sessionsDir, 0755)
+	require.NoError(t, err)
+
+	tests := []struct {
+		name          string
+		sessionName   string
+		createSession bool
+		expectedMode  SessionMode
+		expectError   bool
+		description   string
+	}{
+		{
+			name:          "new session - StartMode",
+			sessionName:   "NewTestSession",
+			createSession: false,
+			expectedMode:  StartMode,
+			expectError:   false,
+			description:   "Should return StartMode when no matching session exists",
+		},
+		{
+			name:          "existing session - ResumeMode",
+			sessionName:   "ExistingSession",
+			createSession: true,
+			expectedMode:  ResumeMode,
+			expectError:   false,
+			description:   "Should return ResumeMode when matching session exists",
+		},
+		{
+			name:        "invalid session name",
+			sessionName: "Invalid/Name",
+			expectError: true,
+			description: "Should fail with invalid filesystem characters",
+		},
+		{
+			name:        "empty session name",
+			sessionName: "",
+			expectError: true,
+			description: "Should fail with empty session name",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// Create test session if needed
+			if tt.createSession {
+				err := createTestSessionFile(sessionsDir, tt.sessionName)
+				require.NoError(t, err)
+			}
+
+			// This will fail until we implement SessionDetector
+			// Following TDD approach - write failing tests first
+			detector := NewSessionDetector(sessionsDir)
+			mode, err := detector.DetectMode(tt.sessionName)
+
+			if tt.expectError {
+				assert.Error(t, err, tt.description)
+			} else {
+				assert.NoError(t, err, tt.description)
+				assert.Equal(t, tt.expectedMode, mode, tt.description)
+			}
+
+			// Cleanup test session file
+			if tt.createSession {
+				cleanupTestSessionFile(sessionsDir, tt.sessionName)
+			}
+		})
+	}
+}
+
+// TestSessionFileValidation tests session file validation
+func TestSessionFileValidation(t *testing.T) {
+	tempDir := t.TempDir()
+	sessionsDir := filepath.Join(tempDir, "sessions")
+	err := os.MkdirAll(sessionsDir, 0755)
+	require.NoError(t, err)
+
+	tests := []struct {
+		name        string
+		sessionData string
+		expectError bool
+		description string
+	}{
+		{
+			name:        "valid session file",
+			sessionData: `{"id":"session_Test_12345","name":"Test","created_at":"2025-10-02T17:38:56Z","config":{"comparison_mode":"pairwise"}}`,
+			expectError: false,
+			description: "Should validate correct JSON session file",
+		},
+		{
+			name:        "invalid JSON",
+			sessionData: `{"id":"session_Test_12345","name":"Test"`,
+			expectError: true,
+			description: "Should fail with malformed JSON",
+		},
+		{
+			name:        "missing required fields",
+			sessionData: `{"name":"Test"}`,
+			expectError: true,
+			description: "Should fail with missing required fields",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// Create test session file with specific content
+			sessionFile := filepath.Join(sessionsDir, "session_TestValidation_12345.json")
+			err := os.WriteFile(sessionFile, []byte(tt.sessionData), 0644)
+			require.NoError(t, err)
+			defer os.Remove(sessionFile)
+
+			// This will fail until we implement session validation
+			// Following TDD approach - write failing tests first
+			detector := NewSessionDetector(sessionsDir)
+			err = detector.ValidateSession(sessionFile)
+
+			if tt.expectError {
+				assert.Error(t, err, tt.description)
+			} else {
+				assert.NoError(t, err, tt.description)
+			}
+		})
+	}
+}
+
+// Helper functions for session detection testing
+
+// SessionMode and SessionDetector are now implemented in session.go (T010 and T011 completed)
+
+// createTestSessionFile creates a test session file for testing
+func createTestSessionFile(sessionsDir, sessionName string) error {
+	sessionData := map[string]interface{}{
+		"id":         fmt.Sprintf("session_%s_%d_testid", sessionName, time.Now().Unix()),
+		"name":       sessionName,
+		"created_at": time.Now().Format(time.RFC3339),
+		"config": map[string]interface{}{
+			"comparison_mode": "pairwise",
+			"initial_rating":  1500.0,
+			"target_accepted": 10,
+		},
+		"proposals": []map[string]interface{}{
+			{"id": 1, "title": "Test Proposal", "rating": 1500.0},
+		},
+	}
+
+	filename := fmt.Sprintf("session_%s_%d_testid.json", sessionName, time.Now().Unix())
+	sessionPath := filepath.Join(sessionsDir, filename)
+
+	file, err := os.Create(sessionPath)
+	if err != nil {
+		return err
+	}
+	defer file.Close()
+
+	encoder := json.NewEncoder(file)
+	return encoder.Encode(sessionData)
+}
+
+// cleanupTestSessionFile removes test session files
+func cleanupTestSessionFile(sessionsDir, sessionName string) {
+	matches, _ := filepath.Glob(filepath.Join(sessionsDir, fmt.Sprintf("session_%s_*", sessionName)))
+	for _, match := range matches {
+		os.Remove(match)
+	}
+}
+
+// TestSessionDetectorComprehensive provides comprehensive test coverage for SessionDetector
+func TestSessionDetectorComprehensive(t *testing.T) {
+	t.Run("NewSessionDetector", func(t *testing.T) {
+		sessionsDir := "/test/sessions"
+		detector := NewSessionDetector(sessionsDir)
+
+		assert.NotNil(t, detector)
+		assert.Equal(t, sessionsDir, detector.sessionsDir)
+	})
+
+	t.Run("DetectMode_EdgeCases", func(t *testing.T) {
+		tempDir := t.TempDir()
+		sessionsDir := filepath.Join(tempDir, "sessions")
+		detector := NewSessionDetector(sessionsDir)
+
+		tests := []struct {
+			name            string
+			sessionName     string
+			setupFunc       func() error
+			expectedMode    SessionMode
+			expectError     bool
+			expectedErrType error
+		}{
+			{
+				name:            "empty session name",
+				sessionName:     "",
+				expectedMode:    StartMode,
+				expectError:     true,
+				expectedErrType: ErrSessionNameInvalid,
+			},
+			{
+				name:            "invalid characters slash",
+				sessionName:     "test/session",
+				expectedMode:    StartMode,
+				expectError:     true,
+				expectedErrType: ErrSessionNameInvalid,
+			},
+			{
+				name:            "invalid characters backslash",
+				sessionName:     `test\session`,
+				expectedMode:    StartMode,
+				expectError:     true,
+				expectedErrType: ErrSessionNameInvalid,
+			},
+			{
+				name:            "reserved name Windows",
+				sessionName:     "CON",
+				expectedMode:    StartMode,
+				expectError:     true,
+				expectedErrType: ErrSessionNameInvalid,
+			},
+			{
+				name:        "valid new session",
+				sessionName: "ValidNewSession",
+				setupFunc: func() error {
+					return os.MkdirAll(sessionsDir, 0755)
+				},
+				expectedMode: StartMode,
+				expectError:  false,
+			},
+			{
+				name:        "existing valid session",
+				sessionName: "ExistingValidSession",
+				setupFunc: func() error {
+					if err := os.MkdirAll(sessionsDir, 0755); err != nil {
+						return err
+					}
+					return createTestSessionFile(sessionsDir, "ExistingValidSession")
+				},
+				expectedMode: ResumeMode,
+				expectError:  false,
+			},
+			{
+				name:        "corrupted session file",
+				sessionName: "CorruptedSession",
+				setupFunc: func() error {
+					if err := os.MkdirAll(sessionsDir, 0755); err != nil {
+						return err
+					}
+					sessionFile := filepath.Join(sessionsDir, "session_CorruptedSession_12345.json")
+					return os.WriteFile(sessionFile, []byte("invalid json"), 0644)
+				},
+				expectedMode:    StartMode,
+				expectError:     true,
+				expectedErrType: ErrSessionCorrupted,
+			},
+		}
+
+		for _, tt := range tests {
+			t.Run(tt.name, func(t *testing.T) {
+				if tt.setupFunc != nil {
+					err := tt.setupFunc()
+					require.NoError(t, err)
+				}
+
+				mode, err := detector.DetectMode(tt.sessionName)
+
+				if tt.expectError {
+					assert.Error(t, err)
+					if tt.expectedErrType != nil {
+						assert.ErrorIs(t, err, tt.expectedErrType)
+					}
+				} else {
+					assert.NoError(t, err)
+					assert.Equal(t, tt.expectedMode, mode)
+				}
+
+				// Cleanup
+				cleanupTestSessionFile(sessionsDir, tt.sessionName)
+			})
+		}
+	})
+
+	t.Run("FindSessionFile", func(t *testing.T) {
+		tempDir := t.TempDir()
+		sessionsDir := filepath.Join(tempDir, "sessions")
+		err := os.MkdirAll(sessionsDir, 0755)
+		require.NoError(t, err)
+
+		detector := NewSessionDetector(sessionsDir)
+
+		// Test empty session name
+		_, err = detector.FindSessionFile("")
+		assert.Error(t, err)
+		assert.Contains(t, err.Error(), "cannot be empty")
+
+		// Test non-existent session
+		sessionFile, err := detector.FindSessionFile("NonExistent")
+		assert.NoError(t, err)
+		assert.Empty(t, sessionFile)
+
+		// Test existing session
+		err = createTestSessionFile(sessionsDir, "ExistingForFind")
+		require.NoError(t, err)
+		defer cleanupTestSessionFile(sessionsDir, "ExistingForFind")
+
+		sessionFile, err = detector.FindSessionFile("ExistingForFind")
+		assert.NoError(t, err)
+		assert.NotEmpty(t, sessionFile)
+		assert.Contains(t, sessionFile, "ExistingForFind")
+	})
+
+	t.Run("ValidateSession", func(t *testing.T) {
+		tempDir := t.TempDir()
+		sessionsDir := filepath.Join(tempDir, "sessions")
+		err := os.MkdirAll(sessionsDir, 0755)
+		require.NoError(t, err)
+
+		detector := NewSessionDetector(sessionsDir)
+
+		// Test empty path
+		err = detector.ValidateSession("")
+		assert.Error(t, err)
+		assert.Contains(t, err.Error(), "cannot be empty")
+
+		// Test non-existent file
+		err = detector.ValidateSession(filepath.Join(sessionsDir, "nonexistent.json"))
+		assert.Error(t, err)
+		assert.Contains(t, err.Error(), "not found")
+
+		// Test invalid JSON
+		invalidFile := filepath.Join(sessionsDir, "invalid.json")
+		err = os.WriteFile(invalidFile, []byte("invalid json"), 0644)
+		require.NoError(t, err)
+		defer os.Remove(invalidFile)
+
+		err = detector.ValidateSession(invalidFile)
+		assert.Error(t, err)
+		assert.Contains(t, err.Error(), "invalid JSON")
+
+		// Test missing required fields
+		incompleteFile := filepath.Join(sessionsDir, "incomplete.json")
+		incompleteData := `{"name":"Test"}`
+		err = os.WriteFile(incompleteFile, []byte(incompleteData), 0644)
+		require.NoError(t, err)
+		defer os.Remove(incompleteFile)
+
+		err = detector.ValidateSession(incompleteFile)
+		assert.Error(t, err)
+		assert.Contains(t, err.Error(), "missing required field")
+
+		// Test valid session file
+		err = createTestSessionFile(sessionsDir, "ValidForValidation")
+		require.NoError(t, err)
+		defer cleanupTestSessionFile(sessionsDir, "ValidForValidation")
+
+		matches, err := filepath.Glob(filepath.Join(sessionsDir, "session_ValidForValidation_*"))
+		require.NoError(t, err)
+		require.Len(t, matches, 1)
+
+		err = detector.ValidateSession(matches[0])
+		assert.NoError(t, err)
+	})
+
+	t.Run("SessionsDirectory_Management", func(t *testing.T) {
+		tempDir := t.TempDir()
+		nonExistentDir := filepath.Join(tempDir, "nonexistent", "sessions")
+
+		detector := NewSessionDetector(nonExistentDir)
+
+		// Should create directory and detect mode for new session
+		mode, err := detector.DetectMode("TestSession")
+		assert.NoError(t, err)
+		assert.Equal(t, StartMode, mode)
+
+		// Verify directory was created
+		info, err := os.Stat(nonExistentDir)
+		assert.NoError(t, err)
+		assert.True(t, info.IsDir())
 	})
 }

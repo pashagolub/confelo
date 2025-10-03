@@ -5,6 +5,7 @@ package data
 
 import (
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -171,7 +172,7 @@ func BenchmarkMemoryUsage(b *testing.B) {
 			}
 
 			// Create session to simulate full application state
-			_ = &Session{
+			s := &Session{
 				ID:        fmt.Sprintf("memory_test_%d", i),
 				Name:      "Memory Test Session",
 				Status:    "active",
@@ -179,6 +180,8 @@ func BenchmarkMemoryUsage(b *testing.B) {
 				UpdatedAt: time.Now(),
 				Proposals: result.Proposals,
 			}
+
+			fmt.Fprintln(io.Discard, s)
 
 			// Get memory after loading
 			runtime.GC()

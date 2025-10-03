@@ -467,16 +467,6 @@ func (cs *ComparisonScreen) updateDisplay() {
 	cs.updateStatus()
 }
 
-// selectProposalForComparison handles proposal selection in comparison mode
-func (cs *ComparisonScreen) selectProposalForComparison(number int) {
-	if number < 1 || number > len(cs.currentProposals) {
-		return
-	}
-
-	cs.selectedWinner = cs.currentProposals[number-1].ID
-	cs.updateDisplay()
-}
-
 // navigateProposals handles left/right navigation between proposals
 // With side-by-side display, navigation is no longer needed
 func (cs *ComparisonScreen) navigateProposals(right bool) {
@@ -544,31 +534,6 @@ func (cs *ComparisonScreen) handleRankingInput(key rune) bool {
 	}
 
 	return false
-}
-
-// setProposalRank moves a proposal to a specific rank position
-func (cs *ComparisonScreen) setProposalRank(proposalIndex, rankPosition int) {
-	if proposalIndex < 0 || proposalIndex >= len(cs.currentProposals) {
-		return
-	}
-	if rankPosition < 0 || rankPosition >= len(cs.rankings) {
-		return
-	}
-
-	proposalID := cs.currentProposals[proposalIndex].ID
-
-	// Remove the proposal from its current position in rankings
-	for i, id := range cs.rankings {
-		if id == proposalID {
-			// Shift other proposals
-			copy(cs.rankings[i:], cs.rankings[i+1:])
-			break
-		}
-	}
-
-	// Insert proposal at new position
-	copy(cs.rankings[rankPosition+1:], cs.rankings[rankPosition:])
-	cs.rankings[rankPosition] = proposalID
 }
 
 // confirmRanking finalizes the ranking and processes the multi-way comparison
@@ -854,10 +819,11 @@ func (cs *ComparisonScreen) executeComparison() error {
 
 		// Update session with new ratings
 		for i := range session.Proposals {
-			if session.Proposals[i].ID == newWinner.ID {
+			switch session.Proposals[i].ID {
+			case newWinner.ID:
 				session.Proposals[i].Score = newWinner.Score
 				session.Proposals[i].UpdatedAt = time.Now()
-			} else if session.Proposals[i].ID == newLoser.ID {
+			case newLoser.ID:
 				session.Proposals[i].Score = newLoser.Score
 				session.Proposals[i].UpdatedAt = time.Now()
 			}

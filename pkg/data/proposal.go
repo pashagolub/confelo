@@ -367,7 +367,7 @@ func ParseCSVFromReader(reader io.Reader, csvConfig CSVConfig, validationConfig 
 		}
 
 		// Parse data row
-		proposal, parseErrors := parseCSVRow(record, columnMap, csvConfig, validationConfig, rowNumber, headers)
+		proposal, parseErrors := parseCSVRow(record, columnMap, validationConfig, rowNumber, headers)
 		if len(parseErrors) > 0 {
 			result.ParseErrors = append(result.ParseErrors, parseErrors...)
 			result.SkippedRows = append(result.SkippedRows, rowNumber)
@@ -476,7 +476,7 @@ func findUnmappedColumns(headers []string, csvConfig CSVConfig) []string {
 }
 
 // parseCSVRow parses a single CSV row into a Proposal
-func parseCSVRow(record []string, columnMap map[string]int, csvConfig CSVConfig, validationConfig ValidationConfig, rowNumber int, headers []string) (*Proposal, []CSVParseError) {
+func parseCSVRow(record []string, columnMap map[string]int, validationConfig ValidationConfig, rowNumber int, headers []string) (*Proposal, []CSVParseError) {
 	var errors []CSVParseError
 
 	// Helper function to safely get column value

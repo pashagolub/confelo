@@ -312,12 +312,8 @@ func TestAppKeyBindings(t *testing.T) {
 
 	// Register test screens including help
 	comparisonScreen := newMockScreen("Comparison")
-	helpScreen := NewHelpScreen()
 
 	err = app.RegisterScreen(ScreenComparison, comparisonScreen)
-	require.NoError(t, err)
-
-	err = app.RegisterScreen(ScreenHelp, helpScreen)
 	require.NoError(t, err)
 
 	// Set initial screen
@@ -336,7 +332,7 @@ func TestAppKeyBindings(t *testing.T) {
 	// Test manual exit instead of relying on Ctrl+C key binding
 	app.state.isRunning = true
 	assert.True(t, app.IsRunning())
-	
+
 	// Call Exit directly
 	err = app.Exit()
 	assert.NoError(t, err)
@@ -403,28 +399,6 @@ func TestAppErrorHandling(t *testing.T) {
 	err = app.NavigateTo(ScreenComparison)
 	assert.Error(t, err)
 	assert.Equal(t, originalScreen, app.GetCurrentScreen())
-}
-
-func TestHelpScreen(t *testing.T) {
-	helpScreen := NewHelpScreen()
-
-	// Test basic properties
-	assert.Equal(t, "Help", helpScreen.GetTitle())
-	assert.NotEmpty(t, helpScreen.GetHelpText())
-	assert.NotNil(t, helpScreen.GetPrimitive())
-
-	// Test screen callbacks
-	config := createTestConfig()
-	storage := newMockStorage()
-
-	app, err := NewApp(config, storage)
-	require.NoError(t, err)
-
-	err = helpScreen.OnEnter(app)
-	assert.NoError(t, err)
-
-	err = helpScreen.OnExit(app)
-	assert.NoError(t, err)
 }
 
 func TestAppConcurrency(t *testing.T) {
