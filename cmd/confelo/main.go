@@ -44,7 +44,7 @@ const (
 type CLIError struct {
 	Code        ErrorCode
 	Message     string
-	Details     map[string]interface{}
+	Details     map[string]any
 	Suggestions []string
 }
 
@@ -54,19 +54,19 @@ func (e *CLIError) Error() string {
 
 // formatErrorJSON formats error as JSON for structured output
 func formatErrorJSON(err *CLIError) string {
-	errorObj := map[string]interface{}{
-		"error": map[string]interface{}{
+	errorObj := map[string]any{
+		"error": map[string]any{
 			"code":    err.Code,
 			"message": err.Message,
 		},
 	}
 
 	if err.Details != nil {
-		errorObj["error"].(map[string]interface{})["details"] = err.Details
+		errorObj["error"].(map[string]any)["details"] = err.Details
 	}
 
 	if err.Suggestions != nil {
-		errorObj["error"].(map[string]interface{})["suggestions"] = err.Suggestions
+		errorObj["error"].(map[string]any)["suggestions"] = err.Suggestions
 	}
 
 	jsonBytes, _ := json.MarshalIndent(errorObj, "", "  ")
@@ -399,7 +399,7 @@ func handleModeDetectionError(err error, sessionName string) *CLIError {
 		return &CLIError{
 			Code:    ExitSessionError,
 			Message: fmt.Sprintf("Session '%s' file is corrupted: %v", sessionName, err),
-			Details: map[string]interface{}{
+			Details: map[string]any{
 				"session_name": sessionName,
 				"action":       "delete_corrupted_session",
 			},
@@ -415,7 +415,7 @@ func handleModeDetectionError(err error, sessionName string) *CLIError {
 		return &CLIError{
 			Code:    ExitValidationError,
 			Message: fmt.Sprintf("Cannot determine session mode: %v", err),
-			Details: map[string]interface{}{
+			Details: map[string]any{
 				"session_name": sessionName,
 				"sessions_dir": "sessions",
 			},
@@ -446,7 +446,7 @@ func handleSessionLoadError(err error, sessionName, sessionFile string) *CLIErro
 		return &CLIError{
 			Code:    ExitSessionError,
 			Message: fmt.Sprintf("Session '%s' is corrupted and cannot be loaded", sessionName),
-			Details: map[string]interface{}{
+			Details: map[string]any{
 				"session_name": sessionName,
 				"session_file": sessionFile,
 				"error_type":   "corruption",
@@ -464,7 +464,7 @@ func handleSessionLoadError(err error, sessionName, sessionFile string) *CLIErro
 		return &CLIError{
 			Code:    ExitFileError,
 			Message: fmt.Sprintf("Permission denied accessing session '%s'", sessionName),
-			Details: map[string]interface{}{
+			Details: map[string]any{
 				"session_name": sessionName,
 				"session_file": sessionFile,
 			},
@@ -480,7 +480,7 @@ func handleSessionLoadError(err error, sessionName, sessionFile string) *CLIErro
 	return &CLIError{
 		Code:    ExitSessionError,
 		Message: fmt.Sprintf("Failed to load session '%s': %v", sessionName, err),
-		Details: map[string]interface{}{
+		Details: map[string]any{
 			"session_name": sessionName,
 			"session_file": sessionFile,
 		},

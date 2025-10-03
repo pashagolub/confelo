@@ -415,7 +415,7 @@ func TestFileStorage_LoadSession(t *testing.T) {
 
 	t.Run("session with no ID", func(t *testing.T) {
 		invalidPath := filepath.Join(tempDir, "no_id.json")
-		invalidSession := map[string]interface{}{
+		invalidSession := map[string]any{
 			"name": "Invalid Session",
 		}
 		data, _ := json.Marshal(invalidSession)

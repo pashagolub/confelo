@@ -49,7 +49,7 @@ type AuditEntry struct {
 	SessionID string         `json:"session_id"` // Session this event belongs to
 
 	// Event data
-	Data map[string]interface{} `json:"data"` // Event-specific payload
+	Data map[string]any `json:"data"` // Event-specific payload
 
 	// Integrity protection
 	PreviousHash string `json:"previous_hash"` // Hash of previous entry (tamper detection)
@@ -222,7 +222,7 @@ func (a *AuditTrail) LogComparison(eventType AuditEventType, data ComparisonAudi
 		return errors.New("audit trail not initialized")
 	}
 
-	eventData := map[string]interface{}{
+	eventData := map[string]any{
 		"comparison_id": data.ComparisonID,
 		"proposal_ids":  data.ProposalIDs,
 		"method":        data.Method,
@@ -250,7 +250,7 @@ func (a *AuditTrail) LogRatingUpdate(data RatingAuditData) error {
 		return errors.New("audit trail not initialized")
 	}
 
-	eventData := map[string]interface{}{
+	eventData := map[string]any{
 		"comparison_id": data.ComparisonID,
 		"proposal_id":   data.ProposalID,
 		"old_rating":    data.OldRating,
@@ -263,7 +263,7 @@ func (a *AuditTrail) LogRatingUpdate(data RatingAuditData) error {
 }
 
 // LogSessionEvent logs a session lifecycle event to the audit trail
-func (a *AuditTrail) LogSessionEvent(eventType AuditEventType, metadata map[string]interface{}) error {
+func (a *AuditTrail) LogSessionEvent(eventType AuditEventType, metadata map[string]any) error {
 	if !a.isInitialized {
 		return errors.New("audit trail not initialized")
 	}
@@ -272,7 +272,7 @@ func (a *AuditTrail) LogSessionEvent(eventType AuditEventType, metadata map[stri
 }
 
 // logEntry writes a new entry to the audit log
-func (a *AuditTrail) logEntry(eventType AuditEventType, data map[string]interface{}) error {
+func (a *AuditTrail) logEntry(eventType AuditEventType, data map[string]any) error {
 	a.mutex.Lock()
 	defer a.mutex.Unlock()
 
@@ -330,7 +330,7 @@ func (a *AuditTrail) calculateEntryHash(entry *AuditEntry) string {
 }
 
 // hashData creates a deterministic hash of the data map
-func (a *AuditTrail) hashData(data map[string]interface{}) string {
+func (a *AuditTrail) hashData(data map[string]any) string {
 	jsonData, _ := json.Marshal(data)
 	hash := sha256.Sum256(jsonData)
 	return hex.EncodeToString(hash[:])
@@ -492,7 +492,7 @@ func (a *AuditTrail) matchesQuery(entry *AuditEntry, options QueryOptions) bool 
 	// Filter by proposal ID
 	if options.ProposalID != "" {
 		// Check if proposal ID is in proposal_ids array
-		if proposalIDs, ok := entry.Data["proposal_ids"].([]interface{}); ok {
+		if proposalIDs, ok := entry.Data["proposal_ids"].([]any); ok {
 			found := false
 			for _, id := range proposalIDs {
 				if strID, ok := id.(string); ok && strID == options.ProposalID {

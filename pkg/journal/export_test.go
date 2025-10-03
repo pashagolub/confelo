@@ -192,7 +192,7 @@ func TestExporter_JSONExport(t *testing.T) {
 			require.NoError(t, err)
 
 			// Verify valid JSON
-			var result map[string]interface{}
+			var result map[string]any
 			err = json.Unmarshal([]byte(output.String()), &result)
 			require.NoError(t, err)
 
@@ -346,7 +346,7 @@ func TestExporter_FileOperations(t *testing.T) {
 			case FormatCSV:
 				assert.Contains(t, string(content), "id,title")
 			case FormatJSON:
-				var jsonData map[string]interface{}
+				var jsonData map[string]any
 				err = json.Unmarshal(content, &jsonData)
 				assert.NoError(t, err, "Should be valid JSON")
 			case FormatText:

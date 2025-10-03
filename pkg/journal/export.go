@@ -95,15 +95,15 @@ type ExportTemplate struct {
 
 // RankingExport represents the complete export data structure
 type RankingExport struct {
-	SessionID       string                 `json:"session_id"`
-	SessionName     string                 `json:"session_name"`
-	ExportedAt      time.Time              `json:"exported_at"`
-	Rankings        []RankedProposal       `json:"rankings"`
-	Statistics      *ExportStatistics      `json:"statistics,omitempty"`
-	AuditTrail      []Comparison           `json:"audit_trail,omitempty"`
-	Comparisons     []Comparison           `json:"comparisons,omitempty"`
-	ConvergenceInfo *ConvergenceInfo       `json:"convergence_info,omitempty"`
-	Metadata        map[string]interface{} `json:"metadata,omitempty"`
+	SessionID       string            `json:"session_id"`
+	SessionName     string            `json:"session_name"`
+	ExportedAt      time.Time         `json:"exported_at"`
+	Rankings        []RankedProposal  `json:"rankings"`
+	Statistics      *ExportStatistics `json:"statistics,omitempty"`
+	AuditTrail      []Comparison      `json:"audit_trail,omitempty"`
+	Comparisons     []Comparison      `json:"comparisons,omitempty"`
+	ConvergenceInfo *ConvergenceInfo  `json:"convergence_info,omitempty"`
+	Metadata        map[string]any    `json:"metadata,omitempty"`
 }
 
 // RankedProposal represents a proposal with ranking information
@@ -307,7 +307,7 @@ func (e *Exporter) ExportJSON(session *Session, writer io.Writer, options Export
 		SessionName: session.Name,
 		ExportedAt:  time.Now(),
 		Rankings:    e.buildRankedProposals(session, options.IncludeStats),
-		Metadata: map[string]interface{}{
+		Metadata: map[string]any{
 			"session_status": session.Status,
 			"created_at":     session.CreatedAt,
 			"updated_at":     session.UpdatedAt,

@@ -1,11 +1,7 @@
 package screens
 
 import (
-	"os"
-	"path/filepath"
-	"strings"
 	"testing"
-	"time"
 
 	"github.com/pashagolub/confelo/pkg/data"
 )
@@ -36,17 +32,17 @@ func (m *RankingMockApp) ExportRankings() error {
 	return m.exportError
 }
 
-func (m *RankingMockApp) GetState() interface{} {
+func (m *RankingMockApp) GetState() any {
 	m.calls = append(m.calls, "GetState")
 	return nil
 }
 
-func (m *RankingMockApp) GetStorage() interface{} {
+func (m *RankingMockApp) GetStorage() any {
 	m.calls = append(m.calls, "GetStorage")
 	return nil
 }
 
-func (m *RankingMockApp) GetSession() interface{} {
+func (m *RankingMockApp) GetSession() any {
 	m.calls = append(m.calls, "GetSession")
 	return nil
 }
@@ -115,10 +111,6 @@ func TestNewRankingScreen(t *testing.T) {
 		t.Error("Ranking table not initialized")
 	}
 
-	if screen.filterForm == nil {
-		t.Error("Filter form not initialized")
-	}
-
 	// Check initial state
 	if screen.sortField != SortByRank {
 		t.Errorf("Expected initial sort field to be SortByRank, got %v", screen.sortField)
@@ -156,58 +148,6 @@ func TestRankingScreen_GetTitle(t *testing.T) {
 		t.Errorf("Expected title '%s', got '%s'", expected, title)
 	}
 
-	// Test with proposals (all visible)
-	screen.proposals = createTestProposalsForRanking()
-	screen.filteredProposals = screen.proposals
-	title = screen.GetTitle()
-	expected = "Rankings (5 proposals)"
-	if title != expected {
-		t.Errorf("Expected title '%s', got '%s'", expected, title)
-	}
-
-	// Test with filtered proposals
-	screen.filteredProposals = screen.proposals[:3]
-	title = screen.GetTitle()
-	expected = "Rankings (3/5 proposals)"
-	if title != expected {
-		t.Errorf("Expected title '%s', got '%s'", expected, title)
-	}
-}
-
-func TestRankingScreen_GetHelpText(t *testing.T) {
-	screen := NewRankingScreen()
-	helpText := screen.GetHelpText()
-
-	if len(helpText) == 0 {
-		t.Error("GetHelpText() returned empty slice")
-	}
-
-	// Check that some essential help items are present
-	foundArrowKeys := false
-	foundExport := false
-	foundSort := false
-
-	for _, text := range helpText {
-		if text == "Arrow Keys: Navigate rankings" {
-			foundArrowKeys = true
-		}
-		if text == "E: Export rankings" {
-			foundExport = true
-		}
-		if text == "S: Change sort field" {
-			foundSort = true
-		}
-	}
-
-	if !foundArrowKeys {
-		t.Error("Help text missing arrow keys instruction")
-	}
-	if !foundExport {
-		t.Error("Help text missing export instruction")
-	}
-	if !foundSort {
-		t.Error("Help text missing sort instruction")
-	}
 }
 
 func TestRankingScreen_OnEnter(t *testing.T) {
@@ -235,10 +175,6 @@ func TestRankingScreen_OnEnter(t *testing.T) {
 
 	if len(screen.proposals) != 5 {
 		t.Errorf("Expected 5 proposals loaded, got %d", len(screen.proposals))
-	}
-
-	if len(screen.filteredProposals) != 5 {
-		t.Errorf("Expected 5 filtered proposals, got %d", len(screen.filteredProposals))
 	}
 }
 
@@ -328,71 +264,9 @@ func TestRankingScreen_CalculateConfidence(t *testing.T) {
 	}
 }
 
-func TestRankingScreen_MatchesFilter(t *testing.T) {
-	screen := NewRankingScreen()
-
-	proposal := data.Proposal{
-		ID:       "1",
-		Title:    "Advanced Go Patterns",
-		Speaker:  "Alice Johnson",
-		Score:    1650.5,
-		Abstract: "This covers Go programming patterns and best practices",
-	}
-
-	// Test empty filter (should match)
-	screen.filter = FilterCriteria{
-		MinScore:      0.0,
-		MaxScore:      3000.0,
-		MinConfidence: 0.0,
-	}
-	if !screen.matchesFilter(proposal) {
-		t.Error("Proposal should match empty filter")
-	}
-
-	// Test search text filter
-	screen.filter.SearchText = "go"
-	if !screen.matchesFilter(proposal) {
-		t.Error("Proposal should match 'go' search (case insensitive)")
-	}
-
-	screen.filter.SearchText = "alice"
-	if !screen.matchesFilter(proposal) {
-		t.Error("Proposal should match 'alice' search in speaker name")
-	}
-
-	screen.filter.SearchText = "patterns"
-	if !screen.matchesFilter(proposal) {
-		t.Error("Proposal should match 'patterns' search in abstract")
-	}
-
-	screen.filter.SearchText = "nonexistent"
-	if screen.matchesFilter(proposal) {
-		t.Error("Proposal should not match 'nonexistent' search")
-	}
-
-	// Test score filter
-	screen.filter.SearchText = ""
-	screen.filter.MinScore = 1700.0
-	if screen.matchesFilter(proposal) {
-		t.Error("Proposal should not match with MinScore 1700 (score is 1650.5)")
-	}
-
-	screen.filter.MinScore = 1600.0
-	screen.filter.MaxScore = 1640.0
-	if screen.matchesFilter(proposal) {
-		t.Error("Proposal should not match with MaxScore 1640 (score is 1650.5)")
-	}
-
-	screen.filter.MinScore = 1600.0
-	screen.filter.MaxScore = 1700.0
-	if !screen.matchesFilter(proposal) {
-		t.Error("Proposal should match score range 1600-1700")
-	}
-}
-
 func TestRankingScreen_SortProposals(t *testing.T) {
 	screen := NewRankingScreen()
-	screen.filteredProposals = []data.Proposal{
+	screen.proposals = []data.Proposal{
 		{ID: "1", Title: "Beta", Speaker: "Charlie", Score: 1600.0},
 		{ID: "2", Title: "Alpha", Speaker: "Alice", Score: 1700.0},
 		{ID: "3", Title: "Gamma", Speaker: "Bob", Score: 1500.0},
@@ -405,9 +279,9 @@ func TestRankingScreen_SortProposals(t *testing.T) {
 
 	expectedOrder := []string{"2", "1", "3"} // Highest score first for rank
 	for i, expected := range expectedOrder {
-		if screen.filteredProposals[i].ID != expected {
+		if screen.proposals[i].ID != expected {
 			t.Errorf("Sort by rank: expected proposal %s at position %d, got %s",
-				expected, i, screen.filteredProposals[i].ID)
+				expected, i, screen.proposals[i].ID)
 		}
 	}
 
@@ -418,9 +292,9 @@ func TestRankingScreen_SortProposals(t *testing.T) {
 
 	expectedTitles := []string{"Alpha", "Beta", "Gamma"}
 	for i, expected := range expectedTitles {
-		if screen.filteredProposals[i].Title != expected {
+		if screen.proposals[i].Title != expected {
 			t.Errorf("Sort by title asc: expected '%s' at position %d, got '%s'",
-				expected, i, screen.filteredProposals[i].Title)
+				expected, i, screen.proposals[i].Title)
 		}
 	}
 
@@ -431,90 +305,16 @@ func TestRankingScreen_SortProposals(t *testing.T) {
 
 	expectedSpeakers := []string{"Charlie", "Bob", "Alice"}
 	for i, expected := range expectedSpeakers {
-		if screen.filteredProposals[i].Speaker != expected {
+		if screen.proposals[i].Speaker != expected {
 			t.Errorf("Sort by speaker desc: expected '%s' at position %d, got '%s'",
-				expected, i, screen.filteredProposals[i].Speaker)
+				expected, i, screen.proposals[i].Speaker)
 		}
-	}
-}
-
-func TestRankingScreen_ApplyFilterAndSort(t *testing.T) {
-	screen := NewRankingScreen()
-	screen.proposals = createTestProposalsForRanking()
-
-	// Test with no filter (should include all proposals)
-	screen.filter = FilterCriteria{
-		MinScore:      0.0,
-		MaxScore:      3000.0,
-		MinConfidence: 0.0,
-	}
-	screen.applyFilterAndSort()
-
-	if len(screen.filteredProposals) != len(screen.proposals) {
-		t.Errorf("Expected %d filtered proposals, got %d",
-			len(screen.proposals), len(screen.filteredProposals))
-	}
-
-	// Test with score filter
-	screen.filter.MinScore = 1600.0
-	screen.applyFilterAndSort()
-
-	count := 0
-	for _, p := range screen.proposals {
-		if p.Score >= 1600.0 {
-			count++
-		}
-	}
-
-	if len(screen.filteredProposals) != count {
-		t.Errorf("Expected %d proposals with score >= 1600, got %d",
-			count, len(screen.filteredProposals))
-	}
-
-	// Verify all filtered proposals meet the criteria
-	for _, p := range screen.filteredProposals {
-		if p.Score < 1600.0 {
-			t.Errorf("Filtered proposal %s has score %.1f < 1600", p.ID, p.Score)
-		}
-	}
-}
-
-func TestRankingScreen_ClearFilters(t *testing.T) {
-	screen := NewRankingScreen()
-	screen.proposals = createTestProposalsForRanking()
-
-	// Set some filters
-	screen.filter = FilterCriteria{
-		SearchText:    "test",
-		MinScore:      1600.0,
-		MaxScore:      1800.0,
-		MinConfidence: 50.0,
-	}
-
-	screen.clearFilters()
-
-	// Check filter is reset to defaults
-	if screen.filter.SearchText != "" {
-		t.Errorf("Expected empty search text, got '%s'", screen.filter.SearchText)
-	}
-
-	if screen.filter.MinScore != 0.0 {
-		t.Errorf("Expected MinScore 0.0, got %.1f", screen.filter.MinScore)
-	}
-
-	if screen.filter.MaxScore != 3000.0 {
-		t.Errorf("Expected MaxScore 3000.0, got %.1f", screen.filter.MaxScore)
-	}
-
-	if screen.filter.MinConfidence != 0.0 {
-		t.Errorf("Expected MinConfidence 0.0, got %.1f", screen.filter.MinConfidence)
 	}
 }
 
 func TestRankingScreen_CycleSortField(t *testing.T) {
 	screen := NewRankingScreen()
 	screen.proposals = createTestProposalsForRanking()
-	screen.filteredProposals = screen.proposals
 
 	initialField := screen.sortField
 	screen.cycleSortField()
@@ -537,7 +337,6 @@ func TestRankingScreen_CycleSortField(t *testing.T) {
 func TestRankingScreen_ToggleSortOrder(t *testing.T) {
 	screen := NewRankingScreen()
 	screen.proposals = createTestProposalsForRanking()
-	screen.filteredProposals = screen.proposals
 
 	initialOrder := screen.sortOrder
 	screen.toggleSortOrder()
@@ -552,45 +351,6 @@ func TestRankingScreen_ToggleSortOrder(t *testing.T) {
 		t.Errorf("Expected to toggle back to initial order %v, got %v",
 			initialOrder, screen.sortOrder)
 	}
-}
-
-func TestRankingScreen_ExportFunctionality(t *testing.T) {
-	// Clean up any leftover export files from previous tests
-	filepath.Walk(".", func(path string, info os.FileInfo, err error) error {
-		if err == nil && strings.HasPrefix(info.Name(), "rankings_export_") && strings.HasSuffix(info.Name(), ".csv") {
-			os.Remove(path)
-		}
-		return nil
-	})
-
-	// Set up cleanup for this test
-	t.Cleanup(func() {
-		files, _ := filepath.Glob("rankings_export_*.csv")
-		for _, file := range files {
-			os.Remove(file)
-		}
-	})
-
-	screen := NewRankingScreen()
-	screen.filteredProposals = createTestProposalsForRanking()[:3] // Use first 3 proposals
-
-	// Test export with actual functionality
-	err := screen.performExport()
-	if err != nil {
-		t.Errorf("performExport failed: %v", err)
-	}
-
-	// Verify the CSV file was created
-	files, _ := filepath.Glob("rankings_export_*.csv")
-	if len(files) == 0 {
-		t.Errorf("Expected at least one export file to be created")
-	}
-
-	// Test that export handles errors gracefully
-	screen.initiateExport()
-
-	// Wait a moment for the goroutine to complete
-	time.Sleep(100 * time.Millisecond)
 }
 
 func TestRankingScreen_GetScoreColor(t *testing.T) {
@@ -629,23 +389,5 @@ func TestRankingScreen_GetConfidenceColor(t *testing.T) {
 
 		// Just ensure the method doesn't panic - color values are always valid
 		_ = color
-	}
-}
-
-func TestRankingScreen_UpdateStatistics(t *testing.T) {
-	screen := NewRankingScreen()
-
-	// Test with no proposals
-	screen.filteredProposals = nil
-	screen.updateStatistics()
-	// Should not crash
-
-	// Test with proposals
-	screen.filteredProposals = createTestProposalsForRanking()
-	screen.updateStatistics()
-	// Should not crash and should calculate statistics
-
-	if screen.statisticsPanel == nil {
-		t.Error("Statistics panel should be initialized")
 	}
 }

@@ -48,7 +48,7 @@ Remove all subcommands (start, resume, export, list, validate) and implement aut
 **Constraints**: <50MB memory usage, filesystem-based storage only, CLI-only configuration  
 **Scale/Scope**: Single-user tool, ~1000 proposals max, local filesystem only
 
-**User Requirements Integration**: Follow KISS principle, avoid bloated code, use modern Go 1.25 features including `any` instead of `interface{}`. Configuration must be done only with command-line parameters - remove all traces of confelo.yaml and config file support.
+**User Requirements Integration**: Follow KISS principle, avoid bloated code, use modern Go 1.25 features including `any` instead of `any`. Configuration must be done only with command-line parameters - remove all traces of confelo.yaml and config file support.
 
 ## Constitution Check
 

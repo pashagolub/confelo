@@ -38,8 +38,8 @@ type ComparisonScreen struct {
 	isRanking        bool
 	currentRank      int // Next rank to assign (1-4)
 
-	// App reference - we'll use interface{} and cast as needed
-	app interface{}
+	// App reference - we'll use any and cast as needed
+	app any
 }
 
 // NewComparisonScreen creates a new comparison screen instance
@@ -203,7 +203,7 @@ func (cs *ComparisonScreen) GetPrimitive() tview.Primitive {
 }
 
 // OnEnter is called when the screen becomes active
-func (cs *ComparisonScreen) OnEnter(app interface{}) error {
+func (cs *ComparisonScreen) OnEnter(app any) error {
 	cs.app = app
 
 	// Set comparison method from config
@@ -233,7 +233,7 @@ func (cs *ComparisonScreen) OnEnter(app interface{}) error {
 }
 
 // OnExit is called when leaving the screen
-func (cs *ComparisonScreen) OnExit(app interface{}) error {
+func (cs *ComparisonScreen) OnExit(app any) error {
 	// Save any pending comparison state if needed
 	return nil
 }
@@ -241,31 +241,6 @@ func (cs *ComparisonScreen) OnExit(app interface{}) error {
 // GetTitle returns the screen title
 func (cs *ComparisonScreen) GetTitle() string {
 	return "Comparison"
-}
-
-// GetHelpText returns help text specific to this screen
-func (cs *ComparisonScreen) GetHelpText() []string {
-	return []string{
-		"Navigation:",
-		"  ← → / h l    Navigate between proposals",
-		"  ↑ ↓ / j k    Scroll proposal content",
-		"",
-		"Comparison:",
-		"  1-4          Select winner (pairwise: 1-2, trio: 1-3, quartet: 1-4)",
-		"  r            Rank all proposals (drag-drop style)",
-		"  s            Skip this comparison",
-		"  n            Next comparison",
-		"",
-		"Mode:",
-		"  p            Switch to pairwise mode",
-		"  t            Switch to trio mode",
-		"  q            Switch to quartet mode",
-		"",
-		"Navigation:",
-		"  Tab          Go to ranking screen",
-		"  Esc          Go back to setup",
-		"  F1/?         Show help",
-	}
 }
 
 // handleInput processes keyboard input for the comparison screen

@@ -792,16 +792,16 @@ func TestSessionFileValidation(t *testing.T) {
 
 // createTestSessionFile creates a test session file for testing
 func createTestSessionFile(sessionsDir, sessionName string) error {
-	sessionData := map[string]interface{}{
+	sessionData := map[string]any{
 		"id":         fmt.Sprintf("session_%s_%d_testid", sessionName, time.Now().Unix()),
 		"name":       sessionName,
 		"created_at": time.Now().Format(time.RFC3339),
-		"config": map[string]interface{}{
+		"config": map[string]any{
 			"comparison_mode": "pairwise",
 			"initial_rating":  1500.0,
 			"target_accepted": 10,
 		},
-		"proposals": []map[string]interface{}{
+		"proposals": []map[string]any{
 			{"id": 1, "title": "Test Proposal", "rating": 1500.0},
 		},
 	}

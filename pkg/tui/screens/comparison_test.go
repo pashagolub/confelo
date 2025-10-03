@@ -103,23 +103,6 @@ func TestComparisonScreen_GetTitle(t *testing.T) {
 	assert.Equal(t, "Comparison", title)
 }
 
-func TestComparisonScreen_GetHelpText(t *testing.T) {
-	screen := NewComparisonScreen()
-	helpText := screen.GetHelpText()
-
-	assert.NotEmpty(t, helpText)
-	assert.Contains(t, helpText[0], "Navigation:")
-	// Verify some key help entries exist
-	found := false
-	for _, line := range helpText {
-		if line == "  1-4          Select winner (pairwise: 1-2, trio: 1-3, quartet: 1-4)" {
-			found = true
-			break
-		}
-	}
-	assert.True(t, found, "Expected help text for winner selection not found")
-}
-
 func TestComparisonScreen_OnEnter(t *testing.T) {
 	screen := NewComparisonScreen()
 	mockApp := &MockApp{session: createTestSession()}

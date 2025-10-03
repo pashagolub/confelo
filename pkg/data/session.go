@@ -240,7 +240,7 @@ func NewSession(name string, proposals []Proposal, config SessionConfig) (*Sessi
 	session.auditTrail = auditTrail
 
 	// Log session creation
-	sessionMetadata := map[string]interface{}{
+	sessionMetadata := map[string]any{
 		"session_name":   name,
 		"proposal_count": len(proposals),
 		"initial_rating": config.Elo.InitialRating,
@@ -685,7 +685,7 @@ func (s *Session) PauseSession() error {
 
 	// Log session pause
 	if s.auditTrail != nil {
-		metadata := map[string]interface{}{
+		metadata := map[string]any{
 			"total_comparisons":           len(s.CompletedComparisons),
 			"active_comparison_cancelled": s.CurrentComparison != nil,
 		}
@@ -713,7 +713,7 @@ func (s *Session) ResumeSession() error {
 
 	// Log session resume
 	if s.auditTrail != nil {
-		metadata := map[string]interface{}{
+		metadata := map[string]any{
 			"total_comparisons": len(s.CompletedComparisons),
 		}
 		if err := s.auditTrail.LogSessionEvent(journal.EventSessionResumed, metadata); err != nil {
@@ -737,7 +737,7 @@ func (s *Session) CompleteSession() error {
 
 	// Log session completion
 	if s.auditTrail != nil {
-		metadata := map[string]interface{}{
+		metadata := map[string]any{
 			"total_comparisons": len(s.CompletedComparisons),
 			"final_convergence": s.ConvergenceMetrics.ConvergenceScore,
 			"duration_seconds":  time.Since(s.CreatedAt).Seconds(),
@@ -1052,7 +1052,7 @@ func (s *Session) GetAuditTrail() []AuditEvent {
 		Timestamp:   s.CreatedAt,
 		EventType:   "session_created",
 		Description: fmt.Sprintf("Session '%s' created with %d proposals", s.Name, len(s.Proposals)),
-		Data:        map[string]interface{}{"proposal_count": len(s.Proposals)},
+		Data:        map[string]any{"proposal_count": len(s.Proposals)},
 	})
 
 	// Add comparison events
@@ -1069,7 +1069,7 @@ func (s *Session) GetAuditTrail() []AuditEvent {
 			Timestamp:   comparison.Timestamp,
 			EventType:   eventType,
 			Description: description,
-			Data: map[string]interface{}{
+			Data: map[string]any{
 				"comparison_id": comparison.ID,
 				"method":        comparison.Method,
 				"proposal_ids":  comparison.ProposalIDs,
@@ -1085,7 +1085,7 @@ func (s *Session) GetAuditTrail() []AuditEvent {
 				Timestamp:   comparison.Timestamp,
 				EventType:   "elo_update",
 				Description: fmt.Sprintf("Proposal %s rating: %.1f → %.1f (Δ%.1f)", update.ProposalID, update.OldRating, update.NewRating, update.RatingDelta),
-				Data: map[string]interface{}{
+				Data: map[string]any{
 					"proposal_id":  update.ProposalID,
 					"old_rating":   update.OldRating,
 					"new_rating":   update.NewRating,
@@ -1101,10 +1101,10 @@ func (s *Session) GetAuditTrail() []AuditEvent {
 
 // AuditEvent represents a single event in the session audit trail
 type AuditEvent struct {
-	Timestamp   time.Time              `json:"timestamp"`
-	EventType   string                 `json:"event_type"`
-	Description string                 `json:"description"`
-	Data        map[string]interface{} `json:"data"`
+	Timestamp   time.Time      `json:"timestamp"`
+	EventType   string         `json:"event_type"`
+	Description string         `json:"description"`
+	Data        map[string]any `json:"data"`
 }
 
 // calculateConvergenceMetrics performs detailed convergence analysis
@@ -1284,7 +1284,7 @@ func ValidateSessionFile(sessionID, storageDir string) error {
 	}
 
 	// Basic JSON validation
-	var rawSession map[string]interface{}
+	var rawSession map[string]any
 	if err := json.Unmarshal(data, &rawSession); err != nil {
 		return fmt.Errorf("%w: invalid JSON format", ErrSessionCorrupted)
 	}

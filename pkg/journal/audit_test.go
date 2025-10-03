@@ -151,10 +151,10 @@ func TestAuditTrail_LogSessionEvent(t *testing.T) {
 	audit, _ := setupTestAuditTrail(t)
 	defer audit.Close()
 
-	metadata := map[string]interface{}{
+	metadata := map[string]any{
 		"session_name":   "Test Conference 2024",
 		"proposal_count": 42,
-		"config": map[string]interface{}{
+		"config": map[string]any{
 			"initial_rating": 1500.0,
 			"k_factor":       32,
 		},
@@ -342,7 +342,7 @@ func TestAuditTrail_VerifyIntegrity(t *testing.T) {
 	}
 
 	require.NoError(t, audit.LogComparison(EventComparisonCompleted, comparisonData))
-	require.NoError(t, audit.LogSessionEvent(EventSessionCreated, map[string]interface{}{"test": "data"}))
+	require.NoError(t, audit.LogSessionEvent(EventSessionCreated, map[string]any{"test": "data"}))
 
 	audit.Close()
 
@@ -441,7 +441,7 @@ func TestAuditTrail_PersistenceAndRecovery(t *testing.T) {
 	}
 
 	require.NoError(t, audit1.LogComparison(EventComparisonCompleted, comparisonData))
-	require.NoError(t, audit1.LogSessionEvent(EventSessionCreated, map[string]interface{}{"test": "data"}))
+	require.NoError(t, audit1.LogSessionEvent(EventSessionCreated, map[string]any{"test": "data"}))
 
 	firstSequence := audit1.GetSequence()
 	audit1.Close()

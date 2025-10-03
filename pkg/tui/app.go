@@ -41,16 +41,13 @@ type Screen interface {
 	GetPrimitive() tview.Primitive
 
 	// OnEnter is called when the screen becomes active
-	OnEnter(app interface{}) error
+	OnEnter(app any) error
 
 	// OnExit is called when leaving the screen
-	OnExit(app interface{}) error
+	OnExit(app any) error
 
 	// GetTitle returns the screen title for display
 	GetTitle() string
-
-	// GetHelpText returns help text specific to this screen
-	GetHelpText() []string
 }
 
 // AppState represents the current application state
@@ -90,6 +87,7 @@ var globalKeyBindings = []KeyBinding{
 	{Key: tcell.KeyCtrlC, Description: "Exit", Handler: (*App).Exit},
 	{Key: tcell.KeyRune, Rune: 'r', Description: "Show rankings", Handler: (*App).ShowRanking},
 	{Key: tcell.KeyRune, Rune: 'c', Description: "Show comparisons", Handler: (*App).ShowComparison},
+	{Key: tcell.KeyRune, Rune: 'e', Description: "Export to CSV", Handler: (*App).ExportToCSV},
 }
 
 // NewApp creates a new TUI application instance
@@ -270,6 +268,12 @@ func (a *App) Exit() error {
 	a.cancel()
 	a.tviewApp.Stop()
 
+	return nil
+}
+
+// ExportToCSV exports the current session rankings to a CSV file
+func (a *App) ExportToCSV() error {
+	// todo: implement export functionality
 	return nil
 }
 
