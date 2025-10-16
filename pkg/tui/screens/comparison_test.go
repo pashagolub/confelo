@@ -149,31 +149,6 @@ func TestComparisonScreen_OnExit(t *testing.T) {
 	assert.NoError(t, err)
 }
 
-func TestComparisonScreen_NavigateProposals(t *testing.T) {
-	screen := NewComparisonScreen()
-	mockApp := &MockApp{session: createTestSession()}
-	screen.OnEnter(mockApp)
-
-	// Navigation is now a no-op since all proposals are visible simultaneously
-	// Just verify the method doesn't crash
-	screen.navigateProposals(true)
-	screen.navigateProposals(false)
-
-	// Proposals should remain the same
-	assert.NotEmpty(t, screen.currentProposals)
-}
-
-func TestComparisonScreen_NavigateProposalsSingle(t *testing.T) {
-	screen := NewComparisonScreen()
-	screen.currentProposals = []data.Proposal{{ID: "single", Title: "Only One", Score: 1500}}
-
-	// Navigation is now a no-op - should not panic with single proposal
-	screen.navigateProposals(true)
-	screen.navigateProposals(false)
-
-	assert.NotEmpty(t, screen.currentProposals)
-}
-
 func TestComparisonScreen_SetComparisonMode(t *testing.T) {
 	screen := NewComparisonScreen()
 	mockApp := &MockApp{session: createTestSession()}
@@ -267,20 +242,6 @@ func TestComparisonScreen_StartRankingInsufficientProposals(t *testing.T) {
 	// Should not enter ranking mode with only 1 proposal
 	assert.False(t, screen.isRanking)
 	assert.Empty(t, screen.rankings)
-}
-
-func TestComparisonScreen_SkipComparison(t *testing.T) {
-	screen := NewComparisonScreen()
-	mockApp := &MockApp{session: createTestSession()}
-	screen.OnEnter(mockApp)
-
-	// Skip should just advance to next comparison
-	screen.skipComparison()
-
-	// Should still have the same proposals (simple implementation just reloads same set)
-	assert.NotEmpty(t, screen.currentProposals)
-	assert.Equal(t, "", screen.selectedWinner)
-	assert.False(t, screen.isRanking)
 }
 
 func TestComparisonScreen_NextComparison(t *testing.T) {

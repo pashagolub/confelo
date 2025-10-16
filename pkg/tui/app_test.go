@@ -263,11 +263,6 @@ func TestAppNavigation(t *testing.T) {
 	// Test navigation to unregistered screen
 	err = app.NavigateTo(ScreenRanking)
 	assert.Error(t, err)
-
-	// Test going back - this should now set to ScreenComparison
-	err = app.GoBack()
-	assert.NoError(t, err)
-	assert.Equal(t, ScreenComparison, app.GetCurrentScreen())
 }
 
 func TestAppState(t *testing.T) {

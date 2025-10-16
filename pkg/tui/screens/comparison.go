@@ -246,28 +246,12 @@ func (cs *ComparisonScreen) GetTitle() string {
 // handleInput processes keyboard input for the comparison screen
 func (cs *ComparisonScreen) handleInput(event *tcell.EventKey) *tcell.EventKey {
 	switch event.Key() {
-	case tcell.KeyEscape:
-		// Handle Escape key to go back to main menu
-		cs.goBack()
-		return nil
-	case tcell.KeyLeft, tcell.KeyRight:
-		cs.navigateProposals(event.Key() == tcell.KeyRight)
-		return nil
 	case tcell.KeyUp, tcell.KeyDown:
 		// Allow scrolling within proposal content
 		return event
-	case tcell.KeyTab:
-		// Switch to ranking screen - implement later when navigation is available
-		return nil
 	}
 
 	switch event.Rune() {
-	case 'h':
-		cs.navigateProposals(false) // left
-		return nil
-	case 'l':
-		cs.navigateProposals(true) // right
-		return nil
 	case 'j':
 		return tcell.NewEventKey(tcell.KeyDown, 0, tcell.ModNone)
 	case 'k':
@@ -287,13 +271,7 @@ func (cs *ComparisonScreen) handleInput(event *tcell.EventKey) *tcell.EventKey {
 		}
 		cs.selectWinner(string(event.Rune()))
 		return nil
-	case 'r':
-		cs.startRanking()
-		return nil
-	case 's':
-		cs.skipComparison()
-		return nil
-	case 'n':
+	case 's', 'n':
 		cs.nextComparison()
 		return nil
 	case 'p':
@@ -440,12 +418,6 @@ func (cs *ComparisonScreen) updateDisplay() {
 	cs.updateInstructions()
 	cs.updateProgress()
 	cs.updateStatus()
-}
-
-// navigateProposals handles left/right navigation between proposals
-// With side-by-side display, navigation is no longer needed
-func (cs *ComparisonScreen) navigateProposals(right bool) {
-	// No-op: both proposals are now visible simultaneously
 }
 
 // selectWinner handles winner selection in comparison
@@ -673,11 +645,6 @@ func (cs *ComparisonScreen) executeMultiWayComparison() error {
 	return nil
 }
 
-// skipComparison skips the current comparison
-func (cs *ComparisonScreen) skipComparison() {
-	cs.nextComparison()
-}
-
 // nextComparison loads the next comparison set
 func (cs *ComparisonScreen) nextComparison() {
 	cs.selectedWinner = ""
@@ -735,13 +702,6 @@ func (cs *ComparisonScreen) showCompletionMessage() {
 	// Clear remaining cards if any
 	for i := 2; i < len(cs.proposalCards); i++ {
 		cs.proposalCards[i].SetText("")
-	}
-}
-
-// goBack handles navigation back to the previous screen
-func (cs *ComparisonScreen) goBack() {
-	if app, ok := cs.app.(interface{ GoBack() error }); ok {
-		app.GoBack()
 	}
 }
 

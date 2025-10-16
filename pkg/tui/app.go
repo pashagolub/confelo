@@ -233,22 +233,6 @@ func (a *App) NavigateTo(screenType ScreenType) error {
 	return nil
 }
 
-// GoBack navigates to the previous screen or exits if at the first screen
-func (a *App) GoBack() error {
-	a.state.mu.RLock()
-	current := a.state.currentScreen
-	previous := a.state.previousScreen
-	a.state.mu.RUnlock()
-
-	// If we're at comparison screen (which is now the first screen), exit the application
-	if current == ScreenComparison {
-		return a.Exit()
-	}
-
-	// Navigate to previous screen
-	return a.NavigateTo(previous)
-}
-
 // ShowRanking displays the ranking screen
 func (a *App) ShowRanking() error {
 	return a.NavigateTo(ScreenRanking)
