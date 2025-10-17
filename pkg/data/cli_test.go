@@ -527,3 +527,83 @@ func TestEloConfig_CalculateExportScore(t *testing.T) {
 		assert.InDelta(t, 33.333, result, 0.01) // Should keep decimals
 	})
 }
+
+func TestEloConfig_ConvertCSVScoreToElo(t *testing.T) {
+	t.Run("ValidScoreInRange", func(t *testing.T) {
+		config := EloConfig{
+			MinRating:     0.0,
+			MaxRating:     3000.0,
+			InitialRating: 1500.0,
+			OutputMin:     0.0,
+			OutputMax:     100.0,
+		}
+
+		// Test conversion of valid scores
+		assert.InDelta(t, 0.0, config.ConvertCSVScoreToElo(0.0), 0.01)      // Min
+		assert.InDelta(t, 1500.0, config.ConvertCSVScoreToElo(50.0), 0.01)  // Middle
+		assert.InDelta(t, 3000.0, config.ConvertCSVScoreToElo(100.0), 0.01) // Max
+		assert.InDelta(t, 750.0, config.ConvertCSVScoreToElo(25.0), 0.01)   // Quarter
+		assert.InDelta(t, 2250.0, config.ConvertCSVScoreToElo(75.0), 0.01)  // Three quarters
+	})
+
+	t.Run("ScoreBelowOutputMin", func(t *testing.T) {
+		config := EloConfig{
+			MinRating:     0.0,
+			MaxRating:     3000.0,
+			InitialRating: 1500.0,
+			OutputMin:     0.0,
+			OutputMax:     100.0,
+		}
+
+		// Scores below OutputMin should return InitialRating (invalid)
+		assert.Equal(t, 1500.0, config.ConvertCSVScoreToElo(-1.0))
+		assert.Equal(t, 1500.0, config.ConvertCSVScoreToElo(-100.0))
+	})
+
+	t.Run("ScoreAboveOutputMax", func(t *testing.T) {
+		config := EloConfig{
+			MinRating:     0.0,
+			MaxRating:     3000.0,
+			InitialRating: 1500.0,
+			OutputMin:     0.0,
+			OutputMax:     100.0,
+		}
+
+		// Scores above OutputMax should return InitialRating (invalid)
+		assert.Equal(t, 1500.0, config.ConvertCSVScoreToElo(101.0))
+		assert.Equal(t, 1500.0, config.ConvertCSVScoreToElo(1850.0))
+		assert.Equal(t, 1500.0, config.ConvertCSVScoreToElo(10000.0))
+	})
+
+	t.Run("DecimalOutputScale", func(t *testing.T) {
+		config := EloConfig{
+			MinRating:     0.0,
+			MaxRating:     3000.0,
+			InitialRating: 1500.0,
+			OutputMin:     1.0,
+			OutputMax:     5.0,
+		}
+
+		// Test conversion with decimal scale
+		assert.InDelta(t, 0.0, config.ConvertCSVScoreToElo(1.0), 0.01)    // Min
+		assert.InDelta(t, 1500.0, config.ConvertCSVScoreToElo(3.0), 0.01) // Middle
+		assert.InDelta(t, 3000.0, config.ConvertCSVScoreToElo(5.0), 0.01) // Max
+
+		// Out of range should return InitialRating
+		assert.Equal(t, 1500.0, config.ConvertCSVScoreToElo(0.5))
+		assert.Equal(t, 1500.0, config.ConvertCSVScoreToElo(5.5))
+	})
+
+	t.Run("ZeroOutputRange", func(t *testing.T) {
+		config := EloConfig{
+			MinRating:     0.0,
+			MaxRating:     3000.0,
+			InitialRating: 1500.0,
+			OutputMin:     50.0,
+			OutputMax:     50.0, // Invalid config
+		}
+
+		// Should return InitialRating to avoid division by zero
+		assert.Equal(t, 1500.0, config.ConvertCSVScoreToElo(50.0))
+	})
+}

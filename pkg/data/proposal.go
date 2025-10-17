@@ -318,7 +318,8 @@ func (pc *ProposalCollection) ExcludeByConflictTag(tag string) []Proposal {
 }
 
 // ParseCSVFromReader parses proposals from a CSV reader using the given configuration
-func ParseCSVFromReader(reader io.Reader, csvConfig CSVConfig, validationConfig ValidationConfig) (*CSVParseResult, error) {
+// If eloConfig is provided, CSV scores will be converted to Elo scale
+func ParseCSVFromReader(reader io.Reader, csvConfig CSVConfig, validationConfig ValidationConfig, eloConfig *EloConfig) (*CSVParseResult, error) {
 	csvReader := csv.NewReader(reader)
 	if csvConfig.Delimiter != "" && len(csvConfig.Delimiter) > 0 {
 		csvReader.Comma = rune(csvConfig.Delimiter[0])
@@ -367,7 +368,7 @@ func ParseCSVFromReader(reader io.Reader, csvConfig CSVConfig, validationConfig 
 		}
 
 		// Parse data row
-		proposal, parseErrors := parseCSVRow(record, columnMap, validationConfig, rowNumber, headers)
+		proposal, parseErrors := parseCSVRow(record, columnMap, validationConfig, rowNumber, headers, eloConfig)
 		if len(parseErrors) > 0 {
 			result.ParseErrors = append(result.ParseErrors, parseErrors...)
 			result.SkippedRows = append(result.SkippedRows, rowNumber)
@@ -476,7 +477,8 @@ func findUnmappedColumns(headers []string, csvConfig CSVConfig) []string {
 }
 
 // parseCSVRow parses a single CSV row into a Proposal
-func parseCSVRow(record []string, columnMap map[string]int, validationConfig ValidationConfig, rowNumber int, headers []string) (*Proposal, []CSVParseError) {
+// If eloConfig is provided, CSV scores will be converted to Elo scale
+func parseCSVRow(record []string, columnMap map[string]int, validationConfig ValidationConfig, rowNumber int, headers []string, eloConfig *EloConfig) (*Proposal, []CSVParseError) {
 	var errors []CSVParseError
 
 	// Helper function to safely get column value
@@ -530,15 +532,24 @@ func parseCSVRow(record []string, columnMap map[string]int, validationConfig Val
 	// Parse score if provided
 	if scoreStr := getColumn("score"); scoreStr != "" {
 		if score, err := strconv.ParseFloat(scoreStr, 64); err == nil {
-			proposal.Score = score
+			// Store the original CSV score
 			proposal.OriginalScore = &score
+
+			// Convert CSV score to Elo scale if config provided
+			if eloConfig != nil {
+				proposal.Score = eloConfig.ConvertCSVScoreToElo(score)
+			} else {
+				proposal.Score = score
+			}
 		} else {
+			// Invalid score format - use default and log error
 			errors = append(errors, CSVParseError{
 				RowNumber: rowNumber,
 				Field:     "score",
 				Value:     scoreStr,
-				Message:   fmt.Sprintf("invalid score format: %v", err),
+				Message:   fmt.Sprintf("invalid score format, using default: %v", err),
 			})
+			// Note: Don't return error, just use default score
 		}
 	}
 

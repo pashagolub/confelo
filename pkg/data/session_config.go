@@ -228,6 +228,30 @@ func (c *CSVConfig) Validate() error {
 	return nil
 }
 
+// ConvertCSVScoreToElo converts a score from CSV (in OutputMin-OutputMax scale) to Elo rating scale
+// This is the inverse of CalculateExportScore, used when loading existing scores from CSV
+// If the CSV score is outside the output scale range, returns InitialRating (invalid score)
+func (e *EloConfig) ConvertCSVScoreToElo(csvScore float64) float64 {
+	// Check if score is within valid output scale range
+	// If outside range, treat as invalid and return default
+	if csvScore < e.OutputMin || csvScore > e.OutputMax {
+		return e.InitialRating
+	}
+
+	// Inverse linear scaling: elo = minRating + (score - outputMin) * (maxRating - minRating) / (outputMax - outputMin)
+	outputRange := e.OutputMax - e.OutputMin
+	ratingRange := e.MaxRating - e.MinRating
+
+	if outputRange == 0 {
+		return e.InitialRating // Avoid division by zero
+	}
+
+	normalized := (csvScore - e.OutputMin) / outputRange
+	eloScore := e.MinRating + (normalized * ratingRange)
+
+	return eloScore
+}
+
 // CalculateExportScore converts an Elo rating to the output scale defined in the configuration
 // It performs linear scaling from [MinRating, MaxRating] to [OutputMin, OutputMax]
 // and respects the UseDecimals setting for formatting

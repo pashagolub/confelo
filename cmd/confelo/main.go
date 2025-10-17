@@ -209,8 +209,8 @@ func executeStartMode(options *data.CLIOptions, verbose bool) error {
 	// Create storage
 	storage := &data.FileStorage{}
 
-	// Load proposals from CSV
-	parseResult, err := storage.LoadProposalsFromCSV(options.Input, config.CSV)
+	// Load proposals from CSV with Elo conversion
+	parseResult, err := storage.LoadProposalsFromCSVWithElo(options.Input, config.CSV, &config.Elo)
 	if err != nil {
 		return &CLIError{
 			Code:    ExitFileError,
@@ -226,12 +226,13 @@ func executeStartMode(options *data.CLIOptions, verbose bool) error {
 	// Create new session
 	sessionID := generateSessionID()
 	session := &data.Session{
-		ID:        sessionID,
-		Name:      options.SessionName,
-		Status:    "active",
-		CreatedAt: time.Now(),
-		UpdatedAt: time.Now(),
-		Proposals: parseResult.Proposals,
+		ID:           sessionID,
+		Name:         options.SessionName,
+		Status:       "active",
+		CreatedAt:    time.Now(),
+		UpdatedAt:    time.Now(),
+		Proposals:    parseResult.Proposals,
+		InputCSVPath: options.Input, // Store input CSV path for export
 	}
 
 	// Save session

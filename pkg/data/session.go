@@ -83,9 +83,10 @@ type Session struct {
 	UpdatedAt time.Time     `json:"updated_at"` // Last modification timestamp
 
 	// Configuration and data
-	Config        SessionConfig  `json:"config"`    // Session configuration
-	Proposals     []Proposal     `json:"proposals"` // Collection of proposals
-	ProposalIndex map[string]int `json:"-"`         // Fast ID lookup (not serialized)
+	Config        SessionConfig  `json:"config"`         // Session configuration
+	Proposals     []Proposal     `json:"proposals"`      // Collection of proposals
+	ProposalIndex map[string]int `json:"-"`              // Fast ID lookup (not serialized)
+	InputCSVPath  string         `json:"input_csv_path"` // Original input CSV file path for export
 
 	// Comparison state
 	CurrentComparison    *ComparisonState `json:"current_comparison"`    // Active comparison state

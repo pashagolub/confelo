@@ -257,7 +257,26 @@ func (a *App) Exit() error {
 
 // ExportToCSV exports the current session rankings to a CSV file
 func (a *App) ExportToCSV() error {
-	// todo: implement export functionality
+	a.state.mu.RLock()
+	session := a.state.session
+	config := a.state.config
+	storage := a.state.storage
+	a.state.mu.RUnlock()
+
+	if session == nil {
+		return fmt.Errorf("no active session to export")
+	}
+
+	if session.InputCSVPath == "" {
+		return fmt.Errorf("no input CSV path stored in session")
+	}
+
+	// Update the original CSV file with export scores
+	err := storage.UpdateCSVScores(session.Proposals, session.InputCSVPath, config.CSV, &config.Elo)
+	if err != nil {
+		return fmt.Errorf("failed to export scores to CSV: %w", err)
+	}
+
 	return nil
 }
 
@@ -453,20 +472,21 @@ func (a *App) GetCurrentScreen() ScreenType {
 
 // LoadCsvAndStartSession loads a CSV file, creates a session, and navigates to comparison
 func (a *App) LoadCsvAndStartSession(csvPath string, config data.SessionConfig) error {
-	// Load proposals from CSV
-	parseResult, err := a.state.storage.LoadProposalsFromCSV(csvPath, config.CSV)
+	// Load proposals from CSV with Elo conversion
+	parseResult, err := a.state.storage.LoadProposalsFromCSVWithElo(csvPath, config.CSV, &config.Elo)
 	if err != nil {
 		return fmt.Errorf("failed to load CSV: %w", err)
 	}
 
 	// Create new session with loaded proposals
 	session := &data.Session{
-		ID:        fmt.Sprintf("session_%d", time.Now().Unix()),
-		Name:      fmt.Sprintf("Session %s", time.Now().Format("2006-01-02 15:04")),
-		Status:    "active",
-		CreatedAt: time.Now(),
-		UpdatedAt: time.Now(),
-		Proposals: parseResult.Proposals,
+		ID:           fmt.Sprintf("session_%d", time.Now().Unix()),
+		Name:         fmt.Sprintf("Session %s", time.Now().Format("2006-01-02 15:04")),
+		Status:       "active",
+		CreatedAt:    time.Now(),
+		UpdatedAt:    time.Now(),
+		Proposals:    parseResult.Proposals,
+		InputCSVPath: csvPath, // Store input CSV path for export
 	}
 
 	// Update app state

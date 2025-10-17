@@ -261,7 +261,7 @@ func TestParseCSVFromReader_WithHeaders(t *testing.T) {
 		DefaultScore:   75.0,
 	}
 
-	result, err := ParseCSVFromReader(reader, csvConfig, validationConfig)
+	result, err := ParseCSVFromReader(reader, csvConfig, validationConfig, nil)
 	require.NoError(t, err)
 	require.NotNil(t, result)
 
@@ -314,7 +314,7 @@ func TestParseCSVFromReader_NoHeaders(t *testing.T) {
 		DefaultScore:   75.0,
 	}
 
-	result, err := ParseCSVFromReader(reader, csvConfig, validationConfig)
+	result, err := ParseCSVFromReader(reader, csvConfig, validationConfig, nil)
 	require.NoError(t, err)
 	require.NotNil(t, result)
 
@@ -482,7 +482,7 @@ func BenchmarkParseCSVFromReader(b *testing.B) {
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		reader := strings.NewReader(testCSVWithHeader)
-		_, err := ParseCSVFromReader(reader, csvConfig, validationConfig)
+		_, err := ParseCSVFromReader(reader, csvConfig, validationConfig, nil)
 		if err != nil {
 			b.Fatal(err)
 		}

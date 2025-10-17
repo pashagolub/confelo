@@ -29,6 +29,10 @@ func newMockStorage() *mockStorage {
 }
 
 func (m *mockStorage) LoadProposalsFromCSV(filename string, config data.CSVConfig) (*data.CSVParseResult, error) {
+	return m.LoadProposalsFromCSVWithElo(filename, config, nil)
+}
+
+func (m *mockStorage) LoadProposalsFromCSVWithElo(filename string, config data.CSVConfig, eloConfig *data.EloConfig) (*data.CSVParseResult, error) {
 	if m.loadError != nil {
 		return nil, m.loadError
 	}
@@ -48,6 +52,14 @@ func (m *mockStorage) LoadProposalsFromCSV(filename string, config data.CSVConfi
 }
 
 func (m *mockStorage) ExportProposalsToCSV(proposals []data.Proposal, filename string, config data.CSVConfig, exportConfig data.ExportConfig) error {
+	if m.saveError != nil {
+		return m.saveError
+	}
+	m.proposals[filename] = proposals
+	return nil
+}
+
+func (m *mockStorage) UpdateCSVScores(proposals []data.Proposal, filename string, config data.CSVConfig, eloConfig *data.EloConfig) error {
 	if m.saveError != nil {
 		return m.saveError
 	}

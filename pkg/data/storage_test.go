@@ -128,10 +128,13 @@ PROP003,"Another Valid","Alice Johnson"`,
 PROP001,"Valid Title",1500
 PROP002,"Invalid Score","not-a-number"`,
 			config:     DefaultCSVConfig(),
-			wantCount:  1,
-			wantErrors: 1,
+			wantCount:  2, // Both proposals loaded, invalid score uses default
+			wantErrors: 0, // No errors - invalid scores are handled gracefully
 			checkFirst: func(t *testing.T, proposals []Proposal) {
 				assert.Equal(t, "PROP001", proposals[0].ID)
+				assert.Equal(t, 1500.0, proposals[0].Score) // Parsed score
+				assert.Equal(t, "PROP002", proposals[1].ID)
+				assert.Equal(t, 1500.0, proposals[1].Score) // Default score used for invalid
 			},
 		},
 		{

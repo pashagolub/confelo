@@ -33,7 +33,9 @@ var (
 type Storage interface {
 	// CSV Operations - Source of truth
 	LoadProposalsFromCSV(filename string, config CSVConfig) (*CSVParseResult, error)
+	LoadProposalsFromCSVWithElo(filename string, config CSVConfig, eloConfig *EloConfig) (*CSVParseResult, error)
 	ExportProposalsToCSV(proposals []Proposal, filename string, config CSVConfig, exportConfig ExportConfig) error
+	UpdateCSVScores(proposals []Proposal, filename string, config CSVConfig, eloConfig *EloConfig) error
 
 	// JSON Operations - Session management only
 	SaveSession(session *Session, filename string) error
@@ -86,8 +88,14 @@ func (fs *FileStorage) ensureBackupDir() error {
 }
 
 // LoadProposalsFromCSV implements CSV input parsing with configurable formats
-// This is the primary entry point - CSV is the source of truth
+// This is where proposals enter the system (CSV → Proposal structs)
 func (fs *FileStorage) LoadProposalsFromCSV(filename string, config CSVConfig) (*CSVParseResult, error) {
+	return fs.LoadProposalsFromCSVWithElo(filename, config, nil)
+}
+
+// LoadProposalsFromCSVWithElo implements CSV input parsing with Elo score conversion
+// If eloConfig is provided, scores in the CSV are converted from the output scale to Elo scale
+func (fs *FileStorage) LoadProposalsFromCSVWithElo(filename string, config CSVConfig, eloConfig *EloConfig) (*CSVParseResult, error) {
 	fs.mu.RLock()
 	defer fs.mu.RUnlock()
 
@@ -97,11 +105,11 @@ func (fs *FileStorage) LoadProposalsFromCSV(filename string, config CSVConfig) (
 	}
 	defer file.Close()
 
-	return fs.parseCSVFromReader(file, config)
+	return fs.parseCSVFromReader(file, config, eloConfig)
 }
 
 // parseCSVFromReader handles the actual CSV parsing logic
-func (fs *FileStorage) parseCSVFromReader(reader io.Reader, config CSVConfig) (*CSVParseResult, error) {
+func (fs *FileStorage) parseCSVFromReader(reader io.Reader, config CSVConfig, eloConfig *EloConfig) (*CSVParseResult, error) {
 	csvReader := csv.NewReader(reader)
 
 	// Configure CSV reader based on config
@@ -186,7 +194,7 @@ func (fs *FileStorage) parseCSVFromReader(reader io.Reader, config CSVConfig) (*
 			continue
 		}
 
-		proposal, err := fs.parseProposalFromRow(row, rowIdx+1, headers, idCol, titleCol, speakerCol, abstractCol, scoreCol, conflictCol)
+		proposal, err := fs.parseProposalFromRow(row, rowIdx+1, headers, idCol, titleCol, speakerCol, abstractCol, scoreCol, conflictCol, eloConfig)
 		if err != nil {
 			if csvErr, ok := err.(CSVParseError); ok {
 				parseErrors = append(parseErrors, csvErr)
@@ -260,7 +268,7 @@ func (fs *FileStorage) isEmptyRow(row []string) bool {
 }
 
 // parseProposalFromRow creates a Proposal from a CSV row
-func (fs *FileStorage) parseProposalFromRow(row []string, rowNum int, headers []string, idCol, titleCol, speakerCol, abstractCol, scoreCol, conflictCol int) (*Proposal, error) {
+func (fs *FileStorage) parseProposalFromRow(row []string, rowNum int, headers []string, idCol, titleCol, speakerCol, abstractCol, scoreCol, conflictCol int, eloConfig *EloConfig) (*Proposal, error) {
 	// Validate row has enough columns
 	maxCol := fs.maxIndex(idCol, titleCol, speakerCol, abstractCol, scoreCol, conflictCol)
 	if len(row) <= maxCol {
@@ -300,20 +308,31 @@ func (fs *FileStorage) parseProposalFromRow(row []string, rowNum int, headers []
 
 	// Parse score
 	var score float64 = 1500.0 // Default from Elo config
+	var originalScore *float64
 	if scoreCol >= 0 && scoreCol < len(row) {
 		scoreStr := strings.TrimSpace(row[scoreCol])
 		if scoreStr != "" {
 			parsedScore, err := strconv.ParseFloat(scoreStr, 64)
 			if err != nil {
-				return nil, CSVParseError{
-					RowNumber: rowNum,
-					Field:     "score",
-					Value:     scoreStr,
-					Message:   fmt.Sprintf("invalid score: %v", err),
+				// Invalid score - use default but don't fail
+				score = 1500.0
+				if eloConfig != nil {
+					score = eloConfig.InitialRating
+				}
+			} else {
+				originalScore = &parsedScore
+				// Convert CSV score to Elo scale if config provided
+				if eloConfig != nil {
+					score = eloConfig.ConvertCSVScoreToElo(parsedScore)
+				} else {
+					score = parsedScore
 				}
 			}
-			score = parsedScore
+		} else if eloConfig != nil {
+			score = eloConfig.InitialRating
 		}
+	} else if eloConfig != nil {
+		score = eloConfig.InitialRating
 	}
 
 	// Parse conflict tags
@@ -356,7 +375,7 @@ func (fs *FileStorage) parseProposalFromRow(row []string, rowNum int, headers []
 		Abstract:      abstract,
 		Speaker:       speaker,
 		Score:         score,
-		OriginalScore: &score, // Preserve original score for auditing
+		OriginalScore: originalScore, // Preserve original CSV score for export
 		Metadata:      metadata,
 		ConflictTags:  conflictTags,
 		CreatedAt:     now,
@@ -545,6 +564,127 @@ func (fs *FileStorage) sortProposalsForExport(proposals []Proposal, config Expor
 	}
 
 	return sorted
+}
+
+// UpdateCSVScores updates the score column in the original CSV file with export scores
+// This preserves all original data and only modifies the score column
+func (fs *FileStorage) UpdateCSVScores(proposals []Proposal, filename string, config CSVConfig, eloConfig *EloConfig) error {
+	fs.mu.RLock()
+	defer fs.mu.RUnlock()
+
+	// Read the original CSV file
+	file, err := os.Open(filename)
+	if err != nil {
+		return fmt.Errorf("cannot open CSV file %s: %w", filename, err)
+	}
+
+	csvReader := csv.NewReader(file)
+	if config.Delimiter != "" && len(config.Delimiter) > 0 {
+		csvReader.Comma = rune(config.Delimiter[0])
+	}
+
+	records, err := csvReader.ReadAll()
+	file.Close()
+	if err != nil {
+		return fmt.Errorf("failed to read CSV: %w", err)
+	}
+
+	if len(records) == 0 {
+		return fmt.Errorf("CSV file is empty")
+	}
+
+	// Find score column index
+	var scoreColIdx int = -1
+	var headers []string
+	startRow := 0
+
+	if config.HasHeader {
+		headers = records[0]
+		startRow = 1
+		for i, header := range headers {
+			if strings.ToLower(strings.TrimSpace(header)) == strings.ToLower(config.ScoreColumn) {
+				scoreColIdx = i
+				break
+			}
+		}
+	}
+
+	if scoreColIdx == -1 {
+		return fmt.Errorf("score column '%s' not found in CSV", config.ScoreColumn)
+	}
+
+	// Create proposal ID to export score map
+	scoreMap := make(map[string]string)
+	for _, proposal := range proposals {
+		var exportScore float64
+		if eloConfig != nil {
+			exportScore = eloConfig.CalculateExportScore(proposal.Score)
+		} else {
+			exportScore = proposal.Score
+		}
+
+		// Format based on UseDecimals setting
+		if eloConfig != nil && !eloConfig.UseDecimals {
+			scoreMap[proposal.ID] = fmt.Sprintf("%d", int(exportScore))
+		} else {
+			scoreMap[proposal.ID] = fmt.Sprintf("%.1f", exportScore)
+		}
+	}
+
+	// Update score column for each row
+	for rowIdx := startRow; rowIdx < len(records); rowIdx++ {
+		row := records[rowIdx]
+		if len(row) <= scoreColIdx {
+			continue
+		}
+
+		// Find proposal ID (assuming it's in first column or ID column)
+		var proposalID string
+		if config.HasHeader {
+			for i, header := range headers {
+				if strings.ToLower(strings.TrimSpace(header)) == strings.ToLower(config.IDColumn) {
+					if i < len(row) {
+						proposalID = strings.TrimSpace(row[i])
+					}
+					break
+				}
+			}
+		} else if len(row) > 0 {
+			proposalID = strings.TrimSpace(row[0])
+		}
+
+		// Update score if we have a mapping
+		if exportScore, exists := scoreMap[proposalID]; exists {
+			records[rowIdx][scoreColIdx] = exportScore
+		}
+	}
+
+	// Write back to file atomically
+	tempFile := filename + ".tmp"
+	outFile, err := os.Create(tempFile)
+	if err != nil {
+		return fmt.Errorf("cannot create temp file: %w", err)
+	}
+
+	writer := csv.NewWriter(outFile)
+	if config.Delimiter != "" && len(config.Delimiter) > 0 {
+		writer.Comma = rune(config.Delimiter[0])
+	}
+
+	err = writer.WriteAll(records)
+	outFile.Close()
+	if err != nil {
+		os.Remove(tempFile)
+		return fmt.Errorf("failed to write CSV: %w", err)
+	}
+
+	// Atomic rename
+	if err := os.Rename(tempFile, filename); err != nil {
+		os.Remove(tempFile)
+		return fmt.Errorf("failed to rename temp file: %w", err)
+	}
+
+	return nil
 }
 
 // SaveSession implements JSON session file serialization with atomic writes
