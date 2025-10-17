@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"strings"
 	"testing"
 	"time"
 
@@ -218,95 +217,6 @@ PROP001,"Test Speaker"`
 		_, err = fs.LoadProposalsFromCSV(csvPath, DefaultCSVConfig())
 		assert.Error(t, err)
 		assert.Contains(t, err.Error(), "required title column")
-	})
-}
-
-func TestFileStorage_ExportProposalsToCSV(t *testing.T) {
-	tempDir := t.TempDir()
-	fs := NewFileStorage(filepath.Join(tempDir, "backups"))
-
-	proposals := []Proposal{
-		{
-			ID:            "PROP001",
-			Title:         "Go Testing",
-			Speaker:       "Jane Doe",
-			Abstract:      "Testing patterns",
-			Score:         1650.0,
-			OriginalScore: func() *float64 { f := 1500.0; return &f }(),
-			Metadata: map[string]string{
-				"id":       "PROP001",
-				"title":    "Go Testing",
-				"speaker":  "Jane Doe",
-				"abstract": "Testing patterns",
-				"score":    "1500",
-				"track":    "Backend",
-			},
-		},
-		{
-			ID:            "PROP002",
-			Title:         "Microservices",
-			Speaker:       "John Smith",
-			Abstract:      "Scaling systems",
-			Score:         1450.0,
-			OriginalScore: func() *float64 { f := 1500.0; return &f }(),
-			Metadata: map[string]string{
-				"id":       "PROP002",
-				"title":    "Microservices",
-				"speaker":  "John Smith",
-				"abstract": "Scaling systems",
-				"score":    "1500",
-				"track":    "Backend",
-			},
-		},
-	}
-
-	t.Run("export with new rating column", func(t *testing.T) {
-		outputPath := filepath.Join(tempDir, "export.csv")
-		csvConfig := DefaultCSVConfig()
-		exportConfig := ExportConfig{
-			Format:        "csv",
-			SortBy:        "rating",
-			SortOrder:     "desc",
-			RoundDecimals: 0,
-		}
-
-		err := fs.ExportProposalsToCSV(proposals, outputPath, csvConfig, exportConfig)
-		require.NoError(t, err)
-
-		// Verify file was created and contains expected content
-		content, err := os.ReadFile(outputPath)
-		require.NoError(t, err)
-
-		contentStr := string(content)
-		assert.Contains(t, contentStr, "final_rating")
-		assert.Contains(t, contentStr, "1650") // Higher rating should be first due to desc sort
-		assert.Contains(t, contentStr, "1450")
-
-		// Verify header is present
-		lines := strings.Split(strings.TrimSpace(contentStr), "\n")
-		assert.GreaterOrEqual(t, len(lines), 3) // Header + 2 data rows
-	})
-
-	t.Run("export with different sort order", func(t *testing.T) {
-		outputPath := filepath.Join(tempDir, "export_title.csv")
-		csvConfig := DefaultCSVConfig()
-		exportConfig := ExportConfig{
-			Format:    "csv",
-			SortBy:    "title",
-			SortOrder: "asc",
-		}
-
-		err := fs.ExportProposalsToCSV(proposals, outputPath, csvConfig, exportConfig)
-		require.NoError(t, err)
-
-		content, err := os.ReadFile(outputPath)
-		require.NoError(t, err)
-
-		// "Go Testing" should come before "Microservices" alphabetically
-		contentStr := string(content)
-		goIndex := strings.Index(contentStr, "Go Testing")
-		microIndex := strings.Index(contentStr, "Microservices")
-		assert.Less(t, goIndex, microIndex)
 	})
 }
 

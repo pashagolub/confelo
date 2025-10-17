@@ -59,6 +59,7 @@ type AppState struct {
 	currentScreen  ScreenType
 	previousScreen ScreenType
 	isRunning      bool
+	lastExportTime *time.Time // Track last successful export
 }
 
 // App represents the main TUI application
@@ -264,18 +265,30 @@ func (a *App) ExportToCSV() error {
 	a.state.mu.RUnlock()
 
 	if session == nil {
+		a.showErrorDialog("Export Error", "No active session to export")
 		return fmt.Errorf("no active session to export")
 	}
 
 	if session.InputCSVPath == "" {
+		a.showErrorDialog("Export Error", "No input CSV path stored in session")
 		return fmt.Errorf("no input CSV path stored in session")
 	}
 
 	// Update the original CSV file with export scores
 	err := storage.UpdateCSVScores(session.Proposals, session.InputCSVPath, config.CSV, &config.Elo)
 	if err != nil {
+		a.showErrorDialog("Export Failed", fmt.Sprintf("Failed to export scores to CSV:\n\n%v", err))
 		return fmt.Errorf("failed to export scores to CSV: %w", err)
 	}
+
+	// Update last export time on success
+	now := time.Now()
+	a.state.mu.Lock()
+	a.state.lastExportTime = &now
+	a.state.mu.Unlock()
+
+	// Force header update
+	a.updateHeader()
 
 	return nil
 }
@@ -431,8 +444,44 @@ func (a *App) updateHeader() {
 		sessionInfo = fmt.Sprintf(" | Session: %s (%s)", session.Name, session.Status)
 	}
 
-	headerText := fmt.Sprintf("Screen: %s%s", title, sessionInfo)
+	// Add export status
+	exportStatus := ""
+	a.state.mu.RLock()
+	lastExport := a.state.lastExportTime
+	a.state.mu.RUnlock()
+
+	if lastExport != nil {
+		// Show relative time (e.g., "2m ago")
+		elapsed := time.Since(*lastExport)
+		if elapsed < time.Minute {
+			exportStatus = fmt.Sprintf(" | Last exported: %ds ago", int(elapsed.Seconds()))
+		} else if elapsed < time.Hour {
+			exportStatus = fmt.Sprintf(" | Last exported: %dm ago", int(elapsed.Minutes()))
+		} else {
+			exportStatus = fmt.Sprintf(" | Last exported: %s", lastExport.Format("15:04"))
+		}
+	} else {
+		exportStatus = " | Not exported yet"
+	}
+
+	headerText := fmt.Sprintf("Screen: %s%s%s", title, sessionInfo, exportStatus)
 	a.header.SetText(headerText)
+}
+
+// showErrorDialog displays an error message in a modal dialog
+func (a *App) showErrorDialog(title, message string) {
+	modal := tview.NewModal().
+		SetText(message).
+		AddButtons([]string{"OK"}).
+		SetDoneFunc(func(buttonIndex int, buttonLabel string) {
+			a.pages.RemovePage("error-dialog")
+		})
+
+	modal.SetTitle(title).
+		SetBorder(true).
+		SetBackgroundColor(tcell.ColorDarkRed)
+
+	a.pages.AddPage("error-dialog", modal, true, true)
 }
 
 // updateFooter updates the footer with current key bindings

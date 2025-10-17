@@ -10,7 +10,6 @@ import (
 	"log"
 	"os"
 	"path/filepath"
-	"time"
 
 	"github.com/jessevdk/go-flags"
 
@@ -223,20 +222,21 @@ func executeStartMode(options *data.CLIOptions, verbose bool) error {
 		}
 	}
 
-	// Create new session
-	sessionID := generateSessionID()
-	session := &data.Session{
-		ID:           sessionID,
-		Name:         options.SessionName,
-		Status:       "active",
-		CreatedAt:    time.Now(),
-		UpdatedAt:    time.Now(),
-		Proposals:    parseResult.Proposals,
-		InputCSVPath: options.Input, // Store input CSV path for export
+	// Create new session with proper initialization
+	session, err := data.NewSession(options.SessionName, parseResult.Proposals, *config, options.Input)
+	if err != nil {
+		return &CLIError{
+			Code:    ExitSessionError,
+			Message: fmt.Sprintf("Failed to create session: %v", err),
+			Suggestions: []string{
+				"Check that proposals were loaded correctly",
+				"Verify session configuration is valid",
+			},
+		}
 	}
 
-	// Save session
-	sessionFile := filepath.Join("sessions", sessionID+".json")
+	// Save session using the session name as filename
+	sessionFile := filepath.Join("sessions", data.SanitizeFilename(options.SessionName)+".json")
 	if err := os.MkdirAll("sessions", 0755); err != nil {
 		return &CLIError{
 			Code:    ExitSessionError,
@@ -252,7 +252,7 @@ func executeStartMode(options *data.CLIOptions, verbose bool) error {
 	}
 
 	if verbose {
-		fmt.Printf("Created new session: %s\n", sessionID)
+		fmt.Printf("Created new session: %s (file: %s)\n", options.SessionName, filepath.Base(sessionFile))
 		if len(parseResult.ParseErrors) > 0 {
 			fmt.Println("Parse Issues:")
 			for _, parseErr := range parseResult.ParseErrors {
@@ -338,12 +338,6 @@ func showVersion() error {
 	return nil
 }
 
-func generateSessionID() string {
-	return fmt.Sprintf("session_%s_%08x",
-		time.Now().Format("20060102_150405"),
-		time.Now().UnixNano()&0xffffffff)
-}
-
 func runInteractiveMode(session *data.Session, config *data.SessionConfig, storage data.Storage) error {
 	// Import TUI components - we need to add these imports at the top
 	tuiApp, err := createTUIApp(session, config, storage)
@@ -352,7 +346,17 @@ func runInteractiveMode(session *data.Session, config *data.SessionConfig, stora
 	}
 
 	// Start the TUI application
-	return tuiApp.Run()
+	runErr := tuiApp.Run()
+	
+	// Save session on exit (regardless of error)
+	// This ensures progress is saved even if app exits unexpectedly
+	sessionFile := filepath.Join("sessions", data.SanitizeFilename(session.Name)+".json")
+	if saveErr := storage.SaveSession(session, sessionFile); saveErr != nil {
+		// Log save error but don't override run error
+		fmt.Fprintf(os.Stderr, "Warning: Failed to save session on exit: %v\n", saveErr)
+	}
+	
+	return runErr
 }
 
 // createTUIApp creates and configures the TUI application with all screens

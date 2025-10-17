@@ -108,6 +108,18 @@ func createTempDir(t *testing.T) string {
 	return tempDir
 }
 
+func createTempCSV(t *testing.T, tempDir string) string {
+	csvContent := `id,title,abstract,speaker
+prop1,"Test Proposal 1","First test proposal","Speaker 1"
+prop2,"Test Proposal 2","Second test proposal","Speaker 2"
+prop3,"Test Proposal 3","Third test proposal","Speaker 3"
+`
+	csvPath := filepath.Join(tempDir, "test_proposals.csv")
+	err := os.WriteFile(csvPath, []byte(csvContent), 0644)
+	require.NoError(t, err)
+	return csvPath
+}
+
 func cleanupTempDir(t *testing.T, dir string) {
 	err := os.RemoveAll(dir)
 	require.NoError(t, err)
@@ -119,7 +131,7 @@ func TestNewSession(t *testing.T) {
 	config := createTestConfig()
 
 	t.Run("Valid session creation", func(t *testing.T) {
-		session, err := NewSession("Test Session", proposals, config)
+		session, err := NewSession("Test Session", proposals, config, "test.csv")
 		require.NoError(t, err)
 		assert.NotNil(t, session)
 		assert.Equal(t, "Test Session", session.Name)
@@ -137,13 +149,13 @@ func TestNewSession(t *testing.T) {
 
 	t.Run("Insufficient proposals", func(t *testing.T) {
 		oneProposal := proposals[:1]
-		_, err := NewSession("Test Session", oneProposal, config)
+		_, err := NewSession("Test Session", oneProposal, config, "test.csv")
 		assert.Error(t, err)
 		assert.Contains(t, err.Error(), "at least 2 proposals")
 	})
 
 	t.Run("Empty name", func(t *testing.T) {
-		_, err := NewSession("", proposals, config)
+		_, err := NewSession("", proposals, config, "test.csv")
 		assert.Error(t, err)
 		assert.Contains(t, err.Error(), "session name is required")
 	})
@@ -154,11 +166,14 @@ func TestSessionSaveAndLoad(t *testing.T) {
 	tempDir := createTempDir(t)
 	defer cleanupTempDir(t, tempDir)
 
+	// Create test CSV file
+	csvPath := createTempCSV(t, tempDir)
+
 	proposals := createTestProposals()
 	config := createTestConfig()
 
 	// Create and save session
-	originalSession, err := NewSession("Test Session", proposals, config)
+	originalSession, err := NewSession("Test Session", proposals, config, csvPath)
 	require.NoError(t, err)
 
 	originalSession.SetStorageDirectory(tempDir)
@@ -212,7 +227,7 @@ func TestSessionLifecycle(t *testing.T) {
 	proposals := createTestProposals()
 	config := createTestConfig()
 
-	session, err := NewSession("Test Session", proposals, config)
+	session, err := NewSession("Test Session", proposals, config, "test.csv")
 	require.NoError(t, err)
 	session.SetStorageDirectory(tempDir)
 
@@ -246,7 +261,7 @@ func TestComparisonManagement(t *testing.T) {
 	proposals := createTestProposals()
 	config := createTestConfig()
 
-	session, err := NewSession("Test Session", proposals, config)
+	session, err := NewSession("Test Session", proposals, config, "test.csv")
 	require.NoError(t, err)
 
 	t.Run("Start pairwise comparison", func(t *testing.T) {
@@ -311,7 +326,7 @@ func TestComparisonErrorHandling(t *testing.T) {
 	proposals := createTestProposals()
 	config := createTestConfig()
 
-	session, err := NewSession("Test Session", proposals, config)
+	session, err := NewSession("Test Session", proposals, config, "test.csv")
 	require.NoError(t, err)
 
 	t.Run("Invalid comparison parameters", func(t *testing.T) {
@@ -348,11 +363,8 @@ func TestEloIntegration(t *testing.T) {
 	proposals := createTestProposals()
 	config := createTestConfig()
 
-	session, err := NewSession("Test Session", proposals, config)
+	session, err := NewSession("Test Session", proposals, config, "test.csv")
 	require.NoError(t, err)
-
-	// Disable autosave to avoid mutex deadlocks in tests
-	session.DisableAutoSave()
 
 	mockEngine := NewMockEloEngine()
 
@@ -414,11 +426,8 @@ func TestConvergenceTracking(t *testing.T) {
 	proposals := createTestProposals()
 	config := createTestConfig()
 
-	session, err := NewSession("Test Session", proposals, config)
+	session, err := NewSession("Test Session", proposals, config, "test.csv")
 	require.NoError(t, err)
-
-	// Disable autosave to avoid mutex deadlocks in tests
-	session.DisableAutoSave()
 
 	mockEngine := NewMockEloEngine()
 
@@ -455,7 +464,7 @@ func TestMatchupOptimization(t *testing.T) {
 	proposals := createTestProposals()
 	config := createTestConfig()
 
-	session, err := NewSession("Test Session", proposals, config)
+	session, err := NewSession("Test Session", proposals, config, "test.csv")
 	require.NoError(t, err)
 
 	mockEngine := NewMockEloEngine()
@@ -495,7 +504,7 @@ func TestAuditTrail(t *testing.T) {
 	proposals := createTestProposals()
 	config := createTestConfig()
 
-	session, err := NewSession("Test Session", proposals, config)
+	session, err := NewSession("Test Session", proposals, config, "test.csv")
 	require.NoError(t, err)
 
 	mockEngine := NewMockEloEngine()
@@ -527,7 +536,7 @@ func TestThreadSafety(t *testing.T) {
 	proposals := createTestProposals()
 	config := createTestConfig()
 
-	session, err := NewSession("Test Session", proposals, config)
+	session, err := NewSession("Test Session", proposals, config, "test.csv")
 	require.NoError(t, err)
 
 	// Concurrent read operations should not cause data races
@@ -563,7 +572,7 @@ func TestBackupAndRecovery(t *testing.T) {
 	config := createTestConfig()
 
 	// Create and save session
-	session, err := NewSession("Test Session", proposals, config)
+	session, err := NewSession("Test Session", proposals, config, "test.csv")
 	require.NoError(t, err)
 	session.SetStorageDirectory(tempDir)
 
@@ -604,13 +613,13 @@ func TestSessionManagementUtils(t *testing.T) {
 	config := createTestConfig()
 
 	// Create multiple sessions
-	session1, err := NewSession("Session 1", proposals, config)
+	session1, err := NewSession("Session 1", proposals, config, "test.csv")
 	require.NoError(t, err)
 	session1.SetStorageDirectory(tempDir)
 	err = session1.Save()
 	require.NoError(t, err)
 
-	session2, err := NewSession("Session 2", proposals, config)
+	session2, err := NewSession("Session 2", proposals, config, "test.csv")
 	require.NoError(t, err)
 	session2.SetStorageDirectory(tempDir)
 	err = session2.Save()

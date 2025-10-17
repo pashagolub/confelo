@@ -34,7 +34,6 @@ type Storage interface {
 	// CSV Operations - Source of truth
 	LoadProposalsFromCSV(filename string, config CSVConfig) (*CSVParseResult, error)
 	LoadProposalsFromCSVWithElo(filename string, config CSVConfig, eloConfig *EloConfig) (*CSVParseResult, error)
-	ExportProposalsToCSV(proposals []Proposal, filename string, config CSVConfig, exportConfig ExportConfig) error
 	UpdateCSVScores(proposals []Proposal, filename string, config CSVConfig, eloConfig *EloConfig) error
 
 	// JSON Operations - Session management only
@@ -396,176 +395,6 @@ func (fs *FileStorage) maxIndex(indices ...int) int {
 	return max
 }
 
-// ExportProposalsToCSV implements CSV export - the final delivery format
-// Following KISS: preserve original format + add new ratings
-func (fs *FileStorage) ExportProposalsToCSV(proposals []Proposal, filename string, config CSVConfig, exportConfig ExportConfig) error {
-	fs.mu.RLock()
-	defer fs.mu.RUnlock()
-
-	if len(proposals) == 0 {
-		return fmt.Errorf("%w: no proposals to export", ErrStorageOperation)
-	}
-
-	// Create or truncate file atomically
-	var finalPath string
-	var tempPath string
-
-	if fs.atomicWrites {
-		tempPath = filename + ".tmp"
-		finalPath = filename
-	} else {
-		finalPath = filename
-		tempPath = filename
-	}
-
-	file, err := os.Create(tempPath)
-	if err != nil {
-		return fmt.Errorf("%w: cannot create export file %s: %v", ErrStorageOperation, tempPath, err)
-	}
-	defer file.Close()
-
-	writer := csv.NewWriter(file)
-
-	// Configure CSV writer
-	delimiter := ','
-	if config.Delimiter != "" && len(config.Delimiter) > 0 {
-		delimiter = rune(config.Delimiter[0])
-	}
-	writer.Comma = delimiter
-
-	// Determine headers from first proposal's metadata or configuration
-	var headers []string
-	if len(proposals) > 0 && len(proposals[0].Metadata) > 0 {
-		// Use original headers from metadata, preserving order
-		headerSet := make(map[string]bool)
-		for _, proposal := range proposals {
-			for header := range proposal.Metadata {
-				if !headerSet[header] {
-					headers = append(headers, header)
-					headerSet[header] = true
-				}
-			}
-		}
-	} else {
-		// Fallback to standard columns
-		headers = []string{config.IDColumn, config.TitleColumn, config.SpeakerColumn, config.AbstractColumn, config.ScoreColumn}
-	}
-
-	// Add new rating column if requested
-	newRatingColumn := "final_rating"
-	if exportConfig.Format == "csv" { // Only add for CSV exports
-		headers = append(headers, newRatingColumn)
-	}
-
-	// Write header if configured
-	if config.HasHeader {
-		if err := writer.Write(headers); err != nil {
-			return fmt.Errorf("%w: failed to write CSV header: %v", ErrStorageOperation, err)
-		}
-	}
-
-	// Sort proposals if requested
-	sortedProposals := fs.sortProposalsForExport(proposals, exportConfig)
-
-	// Write data rows
-	for _, proposal := range sortedProposals {
-		row := make([]string, len(headers))
-
-		// Fill in values from metadata (preserves original data)
-		for i, header := range headers {
-			if header == newRatingColumn {
-				// Add the new rating
-				if exportConfig.ScaleOutput {
-					// Apply scaling if configured (placeholder - would need EloConfig)
-					row[i] = fmt.Sprintf("%.1f", proposal.Score)
-				} else {
-					if exportConfig.RoundDecimals >= 0 {
-						format := fmt.Sprintf("%%.%df", exportConfig.RoundDecimals)
-						row[i] = fmt.Sprintf(format, proposal.Score)
-					} else {
-						row[i] = fmt.Sprintf("%.0f", proposal.Score)
-					}
-				}
-			} else if value, exists := proposal.Metadata[header]; exists {
-				row[i] = value
-			} else {
-				// Fallback to standard fields
-				switch strings.ToLower(header) {
-				case strings.ToLower(config.IDColumn):
-					row[i] = proposal.ID
-				case strings.ToLower(config.TitleColumn):
-					row[i] = proposal.Title
-				case strings.ToLower(config.SpeakerColumn):
-					row[i] = proposal.Speaker
-				case strings.ToLower(config.AbstractColumn):
-					row[i] = proposal.Abstract
-				case strings.ToLower(config.ScoreColumn):
-					if proposal.OriginalScore != nil {
-						row[i] = fmt.Sprintf("%.1f", *proposal.OriginalScore)
-					}
-				case strings.ToLower(config.ConflictColumn):
-					row[i] = strings.Join(proposal.ConflictTags, ",")
-				}
-			}
-		}
-
-		if err := writer.Write(row); err != nil {
-			return fmt.Errorf("%w: failed to write CSV row: %v", ErrStorageOperation, err)
-		}
-	}
-
-	writer.Flush()
-	if err := writer.Error(); err != nil {
-		return fmt.Errorf("%w: CSV writer error: %v", ErrStorageOperation, err)
-	}
-
-	// Ensure file is properly closed before atomic move (Windows requirement)
-	file.Close()
-
-	// Atomic move if using temporary file
-	if fs.atomicWrites {
-		if err := os.Rename(tempPath, finalPath); err != nil {
-			os.Remove(tempPath) // Cleanup temp file
-			return fmt.Errorf("%w: atomic move failed: %v", ErrAtomicWrite, err)
-		}
-	}
-
-	return nil
-}
-
-// sortProposalsForExport applies sorting based on export configuration
-func (fs *FileStorage) sortProposalsForExport(proposals []Proposal, config ExportConfig) []Proposal {
-	// Make a copy to avoid modifying original slice
-	sorted := make([]Proposal, len(proposals))
-	copy(sorted, proposals)
-
-	switch config.SortBy {
-	case "rating", "score":
-		sort.Slice(sorted, func(i, j int) bool {
-			if config.SortOrder == "desc" {
-				return sorted[i].Score > sorted[j].Score
-			}
-			return sorted[i].Score < sorted[j].Score
-		})
-	case "title":
-		sort.Slice(sorted, func(i, j int) bool {
-			if config.SortOrder == "desc" {
-				return sorted[i].Title > sorted[j].Title
-			}
-			return sorted[i].Title < sorted[j].Title
-		})
-	case "speaker":
-		sort.Slice(sorted, func(i, j int) bool {
-			if config.SortOrder == "desc" {
-				return sorted[i].Speaker > sorted[j].Speaker
-			}
-			return sorted[i].Speaker < sorted[j].Speaker
-		})
-	}
-
-	return sorted
-}
-
 // UpdateCSVScores updates the score column in the original CSV file with export scores
 // This preserves all original data and only modifies the score column
 func (fs *FileStorage) UpdateCSVScores(proposals []Proposal, filename string, config CSVConfig, eloConfig *EloConfig) error {
@@ -602,7 +431,7 @@ func (fs *FileStorage) UpdateCSVScores(proposals []Proposal, filename string, co
 		headers = records[0]
 		startRow = 1
 		for i, header := range headers {
-			if strings.ToLower(strings.TrimSpace(header)) == strings.ToLower(config.ScoreColumn) {
+			if strings.EqualFold(strings.TrimSpace(header), config.ScoreColumn) {
 				scoreColIdx = i
 				break
 			}
@@ -642,7 +471,7 @@ func (fs *FileStorage) UpdateCSVScores(proposals []Proposal, filename string, co
 		var proposalID string
 		if config.HasHeader {
 			for i, header := range headers {
-				if strings.ToLower(strings.TrimSpace(header)) == strings.ToLower(config.IDColumn) {
+				if strings.EqualFold(strings.TrimSpace(header), config.IDColumn) {
 					if i < len(row) {
 						proposalID = strings.TrimSpace(row[i])
 					}
@@ -695,6 +524,13 @@ func (fs *FileStorage) SaveSession(session *Session, filename string) error {
 
 	if session == nil {
 		return fmt.Errorf("%w: session cannot be nil", ErrJSONSerialization)
+	}
+
+	// Extract current proposal scores for lightweight persistence
+	// Proposals will be reloaded from CSV when resuming
+	session.ProposalScores = make(map[string]float64, len(session.Proposals))
+	for _, proposal := range session.Proposals {
+		session.ProposalScores[proposal.ID] = proposal.Score
 	}
 
 	// Create backup before overwriting existing session
@@ -812,6 +648,34 @@ func (fs *FileStorage) loadSessionFromFile(filename string) (*Session, error) {
 	// Basic validation to ensure session is valid
 	if session.ID == "" {
 		return nil, fmt.Errorf("%w: session has no ID", ErrCorruptedFile)
+	}
+
+	// Validate that InputCSVPath is set - required for proposal reloading
+	if session.InputCSVPath == "" {
+		return nil, fmt.Errorf("%w: session has no input CSV path", ErrCorruptedFile)
+	}
+
+	// Reload proposals from original CSV file
+	// Proposals are never saved in session JSON to keep files small
+	result, err := fs.LoadProposalsFromCSVWithElo(session.InputCSVPath, session.Config.CSV, &session.Config.Elo)
+	if err != nil {
+		return nil, fmt.Errorf("failed to reload proposals from CSV %s: %w", session.InputCSVPath, err)
+	}
+	session.Proposals = result.Proposals
+
+	// Restore saved scores from ProposalScores map
+	if session.ProposalScores != nil {
+		for i := range session.Proposals {
+			if savedScore, exists := session.ProposalScores[session.Proposals[i].ID]; exists {
+				session.Proposals[i].Score = savedScore
+			}
+		}
+	}
+
+	// Rebuild proposal index for fast lookup
+	session.ProposalIndex = make(map[string]int, len(session.Proposals))
+	for i, proposal := range session.Proposals {
+		session.ProposalIndex[proposal.ID] = i
 	}
 
 	// Initialize audit trail for loaded session

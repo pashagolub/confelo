@@ -67,74 +67,6 @@ func BenchmarkCSVLoading(b *testing.B) {
 	}
 }
 
-// BenchmarkExportPerformance tests export performance for constitutional compliance
-func BenchmarkExportPerformance(b *testing.B) {
-	testDir := filepath.Join(".", "benchmark_export")
-	os.MkdirAll(testDir, 0755)
-	defer os.RemoveAll(testDir)
-
-	testCases := []struct {
-		name      string
-		size      int
-		maxTimeMs int64
-	}{
-		{"Export_50_proposals", 50, 100},
-		{"Export_200_proposals", 200, 500}, // Constitutional requirement: efficient export
-	}
-
-	for _, tc := range testCases {
-		b.Run(tc.name, func(b *testing.B) {
-			// Setup test data
-			storage := NewFileStorage(testDir)
-			config := DefaultSessionConfig()
-
-			// Generate proposals with ratings
-			proposals := make([]Proposal, tc.size)
-			for i := 0; i < tc.size; i++ {
-				proposals[i] = Proposal{
-					ID:        fmt.Sprintf("prop_%d", i+1),
-					Title:     fmt.Sprintf("Benchmark Proposal %d", i+1),
-					Abstract:  fmt.Sprintf("Abstract for proposal %d with sufficient content to test serialization performance", i+1),
-					Speaker:   fmt.Sprintf("Speaker %d", i+1),
-					Score:     1500.0 + float64(i*10), // Varied ratings
-					CreatedAt: time.Now(),
-					UpdatedAt: time.Now(),
-				}
-			}
-
-			exportConfig := ExportConfig{
-				Format:          "csv",
-				IncludeMetadata: true,
-				SortBy:          "rating",
-				SortOrder:       "desc",
-				ScaleOutput:     true,
-				RoundDecimals:   2,
-			}
-
-			b.ResetTimer()
-			b.ReportAllocs()
-
-			for i := 0; i < b.N; i++ {
-				exportFile := filepath.Join(testDir, fmt.Sprintf("benchmark_export_%d_%d.csv", tc.size, i))
-
-				start := time.Now()
-				err := storage.ExportProposalsToCSV(proposals, exportFile, config.CSV, exportConfig)
-				duration := time.Since(start)
-
-				if err != nil {
-					b.Fatal(err)
-				}
-				if duration.Milliseconds() > tc.maxTimeMs {
-					b.Fatalf("Export took %dms, expected <%dms", duration.Milliseconds(), tc.maxTimeMs)
-				}
-
-				// Clean up export file
-				os.Remove(exportFile)
-			}
-		})
-	}
-}
-
 // BenchmarkMemoryUsage tests memory usage for constitutional compliance
 func BenchmarkMemoryUsage(b *testing.B) {
 	testDir := filepath.Join(".", "benchmark_memory")
@@ -289,50 +221,6 @@ func generateBenchmarkCSV(count int) string {
 
 // TestConstitutionalRequirements runs quick validation tests for constitutional compliance
 func TestConstitutionalRequirements(t *testing.T) {
-	t.Run("Response Time Requirements", func(t *testing.T) {
-		// Test that TUI operations complete within 200ms (constitutional requirement)
-		testDir := filepath.Join(".", "response_time_test")
-		os.MkdirAll(testDir, 0755)
-		defer os.RemoveAll(testDir)
-
-		// Generate small test dataset
-		csvData := generateBenchmarkCSV(10)
-		csvFile := filepath.Join(testDir, "response_test.csv")
-		err := os.WriteFile(csvFile, []byte(csvData), 0644)
-		if err != nil {
-			t.Fatal(err)
-		}
-
-		storage := NewFileStorage(testDir)
-		config := DefaultSessionConfig()
-
-		// Test CSV loading response time
-		start := time.Now()
-		result, err := storage.LoadProposalsFromCSV(csvFile, config.CSV)
-		loadTime := time.Since(start)
-
-		if err != nil {
-			t.Fatal(err)
-		}
-		if loadTime.Milliseconds() > 200 {
-			t.Errorf("CSV loading took %dms, constitutional requirement is <200ms for responsive UI", loadTime.Milliseconds())
-		}
-
-		// Test export response time
-		exportFile := filepath.Join(testDir, "response_export.csv")
-		exportConfig := ExportConfig{Format: "csv", SortBy: "rating", SortOrder: "desc"}
-
-		start = time.Now()
-		err = storage.ExportProposalsToCSV(result.Proposals, exportFile, config.CSV, exportConfig)
-		exportTime := time.Since(start)
-
-		if err != nil {
-			t.Fatal(err)
-		}
-		if exportTime.Milliseconds() > 200 {
-			t.Errorf("Export took %dms, constitutional requirement is <200ms for responsive UI", exportTime.Milliseconds())
-		}
-	})
 
 	t.Run("Cross Platform Compatibility", func(t *testing.T) {
 		// Test that the application handles cross-platform file paths and line endings

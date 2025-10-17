@@ -83,14 +83,15 @@ type Session struct {
 	UpdatedAt time.Time     `json:"updated_at"` // Last modification timestamp
 
 	// Configuration and data
-	Config        SessionConfig  `json:"config"`         // Session configuration
-	Proposals     []Proposal     `json:"proposals"`      // Collection of proposals
-	ProposalIndex map[string]int `json:"-"`              // Fast ID lookup (not serialized)
-	InputCSVPath  string         `json:"input_csv_path"` // Original input CSV file path for export
+	Config         SessionConfig     `json:"config"`          // Session configuration
+	Proposals      []Proposal        `json:"-"`               // Collection of proposals (reloaded from CSV, never serialized)
+	ProposalScores map[string]float64 `json:"proposal_scores"` // Current scores by ID (lightweight persistence)
+	ProposalIndex  map[string]int    `json:"-"`               // Fast ID lookup (not serialized)
+	InputCSVPath   string            `json:"input_csv_path"`  // Original input CSV file path for export
 
-	// Comparison state
-	CurrentComparison    *ComparisonState `json:"current_comparison"`    // Active comparison state
-	CompletedComparisons []Comparison     `json:"completed_comparisons"` // Historical comparisons
+	// Comparison state (not persisted - only kept in memory during session)
+	CurrentComparison    *ComparisonState `json:"-"` // Active comparison state (not serialized)
+	CompletedComparisons []Comparison     `json:"-"` // Historical comparisons (not serialized)
 
 	// Analytics and optimization
 	ConvergenceMetrics *ConvergenceMetrics `json:"convergence_metrics"` // Progress tracking
@@ -99,7 +100,6 @@ type Session struct {
 
 	// Internal state management
 	mutex            sync.RWMutex        `json:"-"` // Thread safety (not serialized)
-	autosaveEnabled  bool                `json:"-"` // Auto-save configuration
 	storageDirectory string              `json:"-"` // Where to persist session
 	auditTrail       *journal.AuditTrail `json:"-"` // Audit logging (not serialized)
 }
@@ -174,13 +174,18 @@ type RatingBin struct {
 }
 
 // NewSession creates a new ranking session with the given proposals and configuration
-func NewSession(name string, proposals []Proposal, config SessionConfig) (*Session, error) {
+// inputCSVPath is required - it's used to reload proposals when resuming the session
+func NewSession(name string, proposals []Proposal, config SessionConfig, inputCSVPath string) (*Session, error) {
 	if len(proposals) < 2 {
 		return nil, fmt.Errorf("%w: session must contain at least 2 proposals", ErrInvalidSessionState)
 	}
 
 	if name == "" {
 		return nil, fmt.Errorf("%w: session name is required", ErrRequiredField)
+	}
+
+	if inputCSVPath == "" {
+		return nil, fmt.Errorf("%w: input CSV path is required", ErrRequiredField)
 	}
 
 	// Validate configuration
@@ -224,12 +229,12 @@ func NewSession(name string, proposals []Proposal, config SessionConfig) (*Sessi
 		Config:               config,
 		Proposals:            proposals,
 		ProposalIndex:        proposalIndex,
+		InputCSVPath:         inputCSVPath, // Store CSV path for reload on resume
 		CurrentComparison:    nil,
 		CompletedComparisons: make([]Comparison, 0),
 		ConvergenceMetrics:   convergenceMetrics,
 		MatchupHistory:       make([]MatchupHistory, 0),
 		RatingBins:           make([]RatingBin, 0),
-		autosaveEnabled:      config.UI.AutoSave,
 		storageDirectory:     "./sessions", // Default storage directory
 	}
 
@@ -274,6 +279,7 @@ func generateSessionID() (string, error) {
 }
 
 // LoadSession loads an existing session from the storage directory
+// This is a convenience function that uses FileStorage internally
 func LoadSession(sessionID string, storageDir string) (*Session, error) {
 	if sessionID == "" {
 		return nil, fmt.Errorf("%w: session ID is required", ErrRequiredField)
@@ -286,22 +292,11 @@ func LoadSession(sessionID string, storageDir string) (*Session, error) {
 		return nil, fmt.Errorf("%w: session %s", ErrSessionNotFound, sessionID)
 	}
 
-	// Read session file
-	data, err := os.ReadFile(sessionFile)
+	// Use FileStorage to load session properly (handles proposal reloading from CSV)
+	storage := NewFileStorage(filepath.Join(storageDir, "backups"))
+	session, err := storage.LoadSession(sessionFile)
 	if err != nil {
-		return nil, fmt.Errorf("failed to read session file: %w", err)
-	}
-
-	// Parse JSON
-	var session Session
-	if err := json.Unmarshal(data, &session); err != nil {
-		return nil, fmt.Errorf("%w: failed to parse session data: %v", ErrSessionCorrupted, err)
-	}
-
-	// Rebuild proposal index
-	session.ProposalIndex = make(map[string]int, len(session.Proposals))
-	for i, proposal := range session.Proposals {
-		session.ProposalIndex[proposal.ID] = i
+		return nil, err
 	}
 
 	// Set storage directory
@@ -312,7 +307,7 @@ func LoadSession(sessionID string, storageDir string) (*Session, error) {
 		return nil, fmt.Errorf("%w: %v", ErrSessionCorrupted, err)
 	}
 
-	return &session, nil
+	return session, nil
 }
 
 // validate performs integrity checks on the loaded session
@@ -527,11 +522,21 @@ func (s *Session) StartComparison(proposalIDs []string, method ComparisonMethod)
 }
 
 // CompleteComparison finishes the current comparison with the specified result
+// Automatically saves the session after completion
 func (s *Session) CompleteComparison(winnerID string, rankings []string, skipped bool, skipReason string) (*Comparison, error) {
 	s.mutex.Lock()
-	defer s.mutex.Unlock()
+	comparison, err := s.completeComparisonInternal(winnerID, rankings, skipped, skipReason)
+	s.mutex.Unlock()
 
-	return s.completeComparisonInternal(winnerID, rankings, skipped, skipReason)
+	// Auto-save after each comparison (outside mutex to avoid deadlock)
+	if err == nil && s.storageDirectory != "" {
+		if saveErr := s.Save(); saveErr != nil {
+			// Log warning but don't fail the comparison
+			fmt.Printf("Warning: failed to auto-save session after comparison: %v\n", saveErr)
+		}
+	}
+
+	return comparison, err
 }
 
 // completeComparisonInternal performs comparison completion without acquiring mutex (internal use)
@@ -1333,25 +1338,6 @@ func CleanupBackups(sessionID, storageDir string, keepCount int) error {
 	return nil
 }
 
-// EnableAutoSave turns on automatic session persistence
-func (s *Session) EnableAutoSave(interval time.Duration) {
-	s.mutex.Lock()
-	defer s.mutex.Unlock()
-
-	s.autosaveEnabled = true
-	s.Config.UI.AutoSave = true
-	s.Config.UI.AutoSaveInterval = interval
-}
-
-// DisableAutoSave turns off automatic session persistence
-func (s *Session) DisableAutoSave() {
-	s.mutex.Lock()
-	defer s.mutex.Unlock()
-
-	s.autosaveEnabled = false
-	s.Config.UI.AutoSave = false
-}
-
 // GetSessionInfo returns basic session information without loading the full session
 func GetSessionInfo(sessionID, storageDir string) (*SessionInfo, error) {
 	sessionFile := filepath.Join(storageDir, sessionID+".json")
@@ -1992,19 +1978,21 @@ func (sd *SessionDetector) FindSessionFile(sessionName string) (string, error) {
 		return "", fmt.Errorf("session name cannot be empty")
 	}
 
-	// Scan the sessions directory for files matching the pattern
-	pattern := fmt.Sprintf("session_%s_*.json", sessionName)
-	matches, err := filepath.Glob(filepath.Join(sd.sessionsDir, pattern))
-	if err != nil {
-		return "", fmt.Errorf("failed to scan sessions directory: %w", err)
+	// Sanitize session name for filesystem
+	safeName := SanitizeFilename(sessionName)
+	
+	// Construct direct filename
+	sessionFile := filepath.Join(sd.sessionsDir, safeName+".json")
+	
+	// Check if file exists
+	if _, err := os.Stat(sessionFile); err != nil {
+		if os.IsNotExist(err) {
+			return "", nil // No session found
+		}
+		return "", fmt.Errorf("failed to check session file: %w", err)
 	}
 
-	if len(matches) == 0 {
-		return "", nil // No session found
-	}
-
-	// Return the first match (sessions should have unique names)
-	return matches[0], nil
+	return sessionFile, nil
 }
 
 // ValidateSession validates the integrity of a session file
@@ -2063,6 +2051,26 @@ func (sd *SessionDetector) validateSessionName(name string) error {
 	}
 
 	return nil
+}
+
+// SanitizeFilename converts a session name into a safe filename
+func SanitizeFilename(name string) string {
+	// Replace invalid filesystem characters with underscores
+	invalidChars := `<>:"/\|?*`
+	result := name
+	for _, char := range invalidChars {
+		result = strings.ReplaceAll(result, string(char), "_")
+	}
+	
+	// Replace spaces with underscores for cleaner filenames
+	result = strings.ReplaceAll(result, " ", "_")
+	
+	// Ensure it's not empty after sanitization
+	if result == "" {
+		result = "session"
+	}
+	
+	return result
 }
 
 // ensureSessionsDirectory creates the sessions directory if it doesn't exist

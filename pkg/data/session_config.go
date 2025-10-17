@@ -6,7 +6,6 @@ import (
 	"errors"
 	"fmt"
 	"strings"
-	"time"
 )
 
 // Error types for configuration validation
@@ -52,11 +51,9 @@ type EloConfig struct {
 
 // UIConfig holds terminal interface preferences
 type UIConfig struct {
-	ComparisonMode   string        `json:"comparison_mode"`    // Default comparison type (pairwise/trio/quartet)
-	ShowProgress     bool          `json:"show_progress"`      // Display progress indicators
-	ShowConfidence   bool          `json:"show_confidence"`    // Display rating confidence
-	AutoSave         bool          `json:"auto_save"`          // Automatically save session
-	AutoSaveInterval time.Duration `json:"auto_save_interval"` // Save frequency
+	ComparisonMode string `json:"comparison_mode"` // Default comparison type (pairwise/trio/quartet)
+	ShowProgress   bool   `json:"show_progress"`   // Display progress indicators
+	ShowConfidence bool   `json:"show_confidence"` // Display rating confidence
 }
 
 // ExportConfig holds output format settings
@@ -122,11 +119,9 @@ func DefaultEloConfig() EloConfig {
 // DefaultUIConfig returns TUI interface defaults
 func DefaultUIConfig() UIConfig {
 	return UIConfig{
-		ComparisonMode:   "pairwise",
-		ShowProgress:     true,
-		ShowConfidence:   true,
-		AutoSave:         true,
-		AutoSaveInterval: 5 * time.Minute,
+		ComparisonMode: "pairwise",
+		ShowProgress:   true,
+		ShowConfidence: true,
 	}
 }
 
@@ -320,15 +315,6 @@ func (u *UIConfig) Validate() error {
 
 	if !validModes[u.ComparisonMode] {
 		return fmt.Errorf("%w: comparison_mode '%s' must be one of: pairwise, trio, quartet", ErrInvalidUIConfig, u.ComparisonMode)
-	}
-
-	// Auto-save validation
-	if u.AutoSave && u.AutoSaveInterval <= 0 {
-		return fmt.Errorf("%w: auto_save_interval must be positive when auto_save is enabled, got %v", ErrInvalidUIConfig, u.AutoSaveInterval)
-	}
-
-	if u.AutoSaveInterval > 24*time.Hour {
-		return fmt.Errorf("%w: auto_save_interval %v is unusually long (max recommended: 1 hour)", ErrInvalidUIConfig, u.AutoSaveInterval)
 	}
 
 	return nil
