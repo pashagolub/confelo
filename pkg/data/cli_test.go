@@ -362,3 +362,168 @@ func TestCLIOnlyConfiguration(t *testing.T) {
 		assert.Contains(t, err.Error(), "session name is required")
 	})
 }
+
+func TestApplyOutputScale(t *testing.T) {
+	t.Run("IntegerScale0To100", func(t *testing.T) {
+		config := DefaultSessionConfig()
+		err := applyOutputScale(&config, "0-100")
+		require.NoError(t, err)
+
+		assert.Equal(t, 0.0, config.Elo.OutputMin)
+		assert.Equal(t, 100.0, config.Elo.OutputMax)
+		assert.False(t, config.Elo.UseDecimals)
+	})
+
+	t.Run("DecimalScale1To5", func(t *testing.T) {
+		config := DefaultSessionConfig()
+		err := applyOutputScale(&config, "1.0-5.0")
+		require.NoError(t, err)
+
+		assert.Equal(t, 1.0, config.Elo.OutputMin)
+		assert.Equal(t, 5.0, config.Elo.OutputMax)
+		assert.True(t, config.Elo.UseDecimals)
+	})
+
+	t.Run("MixedDecimalScale", func(t *testing.T) {
+		config := DefaultSessionConfig()
+		err := applyOutputScale(&config, "0.0-10")
+		require.NoError(t, err)
+
+		assert.Equal(t, 0.0, config.Elo.OutputMin)
+		assert.Equal(t, 10.0, config.Elo.OutputMax)
+		assert.True(t, config.Elo.UseDecimals) // Has decimals in one value
+	})
+
+	t.Run("EmptyScaleUsesDefaults", func(t *testing.T) {
+		config := DefaultSessionConfig()
+		originalMin := config.Elo.OutputMin
+		originalMax := config.Elo.OutputMax
+
+		err := applyOutputScale(&config, "")
+		require.NoError(t, err)
+
+		// Should not change defaults
+		assert.Equal(t, originalMin, config.Elo.OutputMin)
+		assert.Equal(t, originalMax, config.Elo.OutputMax)
+	})
+
+	t.Run("InvalidFormatMissingDash", func(t *testing.T) {
+		config := DefaultSessionConfig()
+		err := applyOutputScale(&config, "100")
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "invalid scale format")
+	})
+
+	t.Run("InvalidFormatNonNumeric", func(t *testing.T) {
+		config := DefaultSessionConfig()
+		err := applyOutputScale(&config, "zero-hundred")
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "invalid minimum value")
+	})
+
+	t.Run("InvalidRangeMinGreaterThanMax", func(t *testing.T) {
+		config := DefaultSessionConfig()
+		err := applyOutputScale(&config, "100-0")
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "must be less than")
+	})
+
+	t.Run("InvalidRangeEqualValues", func(t *testing.T) {
+		config := DefaultSessionConfig()
+		err := applyOutputScale(&config, "50-50")
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "must be less than")
+	})
+}
+
+func TestEloConfig_CalculateExportScore(t *testing.T) {
+	t.Run("LinearScaling0To100", func(t *testing.T) {
+		config := EloConfig{
+			MinRating:   0.0,
+			MaxRating:   3000.0,
+			OutputMin:   0.0,
+			OutputMax:   100.0,
+			UseDecimals: false,
+		}
+
+		// Test various Elo scores
+		assert.Equal(t, 0.0, config.CalculateExportScore(0.0))      // Min rating
+		assert.Equal(t, 50.0, config.CalculateExportScore(1500.0))  // Mid rating
+		assert.Equal(t, 100.0, config.CalculateExportScore(3000.0)) // Max rating
+		assert.Equal(t, 25.0, config.CalculateExportScore(750.0))   // Quarter
+		assert.Equal(t, 75.0, config.CalculateExportScore(2250.0))  // Three quarters
+	})
+
+	t.Run("LinearScaling1To5Decimals", func(t *testing.T) {
+		config := EloConfig{
+			MinRating:   0.0,
+			MaxRating:   3000.0,
+			OutputMin:   1.0,
+			OutputMax:   5.0,
+			UseDecimals: true,
+		}
+
+		// Test various Elo scores
+		assert.InDelta(t, 1.0, config.CalculateExportScore(0.0), 0.01)    // Min rating
+		assert.InDelta(t, 3.0, config.CalculateExportScore(1500.0), 0.01) // Mid rating
+		assert.InDelta(t, 5.0, config.CalculateExportScore(3000.0), 0.01) // Max rating
+		assert.InDelta(t, 2.0, config.CalculateExportScore(750.0), 0.01)  // Quarter
+		assert.InDelta(t, 4.0, config.CalculateExportScore(2250.0), 0.01) // Three quarters
+	})
+
+	t.Run("ClampingBelowMinRating", func(t *testing.T) {
+		config := EloConfig{
+			MinRating:   0.0,
+			MaxRating:   3000.0,
+			OutputMin:   0.0,
+			OutputMax:   100.0,
+			UseDecimals: false,
+		}
+
+		// Scores below MinRating should clamp to OutputMin
+		assert.Equal(t, 0.0, config.CalculateExportScore(-100.0))
+		assert.Equal(t, 0.0, config.CalculateExportScore(-1000.0))
+	})
+
+	t.Run("ClampingAboveMaxRating", func(t *testing.T) {
+		config := EloConfig{
+			MinRating:   0.0,
+			MaxRating:   3000.0,
+			OutputMin:   0.0,
+			OutputMax:   100.0,
+			UseDecimals: false,
+		}
+
+		// Scores above MaxRating should clamp to OutputMax
+		assert.Equal(t, 100.0, config.CalculateExportScore(3500.0))
+		assert.Equal(t, 100.0, config.CalculateExportScore(10000.0))
+	})
+
+	t.Run("IntegerRoundingWhenUseDecimalsFalse", func(t *testing.T) {
+		config := EloConfig{
+			MinRating:   0.0,
+			MaxRating:   3000.0,
+			OutputMin:   0.0,
+			OutputMax:   100.0,
+			UseDecimals: false,
+		}
+
+		// Test rounding behavior
+		assert.Equal(t, 33.0, config.CalculateExportScore(1000.0)) // Should round 33.33 to 33
+		assert.Equal(t, 67.0, config.CalculateExportScore(2000.0)) // Should round 66.67 to 67
+	})
+
+	t.Run("DecimalPrecisionWhenUseDecimalsTrue", func(t *testing.T) {
+		config := EloConfig{
+			MinRating:   0.0,
+			MaxRating:   3000.0,
+			OutputMin:   0.0,
+			OutputMax:   100.0,
+			UseDecimals: true,
+		}
+
+		// Test decimal precision
+		result := config.CalculateExportScore(1000.0)
+		assert.InDelta(t, 33.333, result, 0.01) // Should keep decimals
+	})
+}

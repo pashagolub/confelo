@@ -324,7 +324,8 @@ func TestRankingScreen_CycleSortField(t *testing.T) {
 	}
 
 	// Cycle through all fields and back to start
-	for i := 0; i < 4; i++ {
+	// We have 6 sort fields: Rank, Score, ExportScore, Title, Speaker, Confidence
+	for i := 0; i < 5; i++ {
 		screen.cycleSortField()
 	}
 
@@ -390,4 +391,207 @@ func TestRankingScreen_GetConfidenceColor(t *testing.T) {
 		// Just ensure the method doesn't panic - color values are always valid
 		_ = color
 	}
+}
+
+// RankingMockAppWithConfig extends RankingMockApp to include config
+type RankingMockAppWithConfig struct {
+	RankingMockApp
+	config *data.SessionConfig
+}
+
+func (m *RankingMockAppWithConfig) GetConfig() *data.SessionConfig {
+	m.calls = append(m.calls, "GetConfig")
+	return m.config
+}
+
+func TestRankingScreen_CalculateExportScore(t *testing.T) {
+	t.Run("ScalesBasedOnActualMinMaxInteger", func(t *testing.T) {
+		screen := NewRankingScreen()
+
+		// Set up proposals with scores ranging from 1490 to 1720
+		screen.proposals = createTestProposalsForRanking()
+
+		// Configure for 0-100 integer scale
+		config := data.DefaultSessionConfig()
+		config.Elo.OutputMin = 0.0
+		config.Elo.OutputMax = 100.0
+		config.Elo.UseDecimals = false
+
+		mockApp := &RankingMockAppWithConfig{
+			RankingMockApp: RankingMockApp{
+				proposals: screen.proposals,
+			},
+			config: &config,
+		}
+		screen.app = mockApp
+
+		// Min score (1490.3) should map to 0
+		minScore := screen.calculateExportScore(1490.3)
+		if minScore != 0.0 {
+			t.Errorf("Expected min export score to be 0, got %.1f", minScore)
+		}
+
+		// Max score (1720.8) should map to 100
+		maxScore := screen.calculateExportScore(1720.8)
+		if maxScore != 100.0 {
+			t.Errorf("Expected max export score to be 100, got %.1f", maxScore)
+		}
+
+		// Mid-range score should be roughly in the middle
+		midScore := screen.calculateExportScore(1605.0) // Roughly middle of 1490-1720
+		if midScore < 45.0 || midScore > 55.0 {
+			t.Errorf("Expected mid export score to be around 50, got %.1f", midScore)
+		}
+	})
+
+	t.Run("ScalesBasedOnActualMinMaxDecimal", func(t *testing.T) {
+		screen := NewRankingScreen()
+		screen.proposals = createTestProposalsForRanking()
+
+		// Configure for 1.0-5.0 decimal scale
+		config := data.DefaultSessionConfig()
+		config.Elo.OutputMin = 1.0
+		config.Elo.OutputMax = 5.0
+		config.Elo.UseDecimals = true
+
+		mockApp := &RankingMockAppWithConfig{
+			RankingMockApp: RankingMockApp{
+				proposals: screen.proposals,
+			},
+			config: &config,
+		}
+		screen.app = mockApp
+
+		// Min score should map to 1.0
+		minScore := screen.calculateExportScore(1490.3)
+		if minScore < 0.99 || minScore > 1.01 {
+			t.Errorf("Expected min export score to be ~1.0, got %.2f", minScore)
+		}
+
+		// Max score should map to 5.0
+		maxScore := screen.calculateExportScore(1720.8)
+		if maxScore < 4.99 || maxScore > 5.01 {
+			t.Errorf("Expected max export score to be ~5.0, got %.2f", maxScore)
+		}
+
+		// Mid-range should be around 3.0
+		midScore := screen.calculateExportScore(1605.0)
+		if midScore < 2.8 || midScore > 3.2 {
+			t.Errorf("Expected mid export score to be ~3.0, got %.2f", midScore)
+		}
+	})
+
+	t.Run("HandlesAllSameScore", func(t *testing.T) {
+		screen := NewRankingScreen()
+
+		// All proposals with same score
+		screen.proposals = []data.Proposal{
+			{ID: "1", Title: "Talk 1", Score: 1500.0},
+			{ID: "2", Title: "Talk 2", Score: 1500.0},
+			{ID: "3", Title: "Talk 3", Score: 1500.0},
+		}
+
+		config := data.DefaultSessionConfig()
+		config.Elo.OutputMin = 0.0
+		config.Elo.OutputMax = 100.0
+		config.Elo.UseDecimals = false
+
+		mockApp := &RankingMockAppWithConfig{
+			RankingMockApp: RankingMockApp{
+				proposals: screen.proposals,
+			},
+			config: &config,
+		}
+		screen.app = mockApp
+
+		// Should return middle of scale when all scores are the same
+		score := screen.calculateExportScore(1500.0)
+		if score != 50.0 {
+			t.Errorf("Expected export score to be 50 (middle) when all scores same, got %.1f", score)
+		}
+	})
+
+	t.Run("HandlesEmptyProposals", func(t *testing.T) {
+		screen := NewRankingScreen()
+		screen.proposals = []data.Proposal{}
+
+		config := data.DefaultSessionConfig()
+		config.Elo.OutputMin = 0.0
+		config.Elo.OutputMax = 100.0
+		config.Elo.UseDecimals = false
+
+		mockApp := &RankingMockAppWithConfig{
+			RankingMockApp: RankingMockApp{
+				proposals: screen.proposals,
+			},
+			config: &config,
+		}
+		screen.app = mockApp
+
+		// Should return minimum when no proposals
+		score := screen.calculateExportScore(1500.0)
+		if score != 0.0 {
+			t.Errorf("Expected export score to be 0 (min) when no proposals, got %.1f", score)
+		}
+	})
+
+	t.Run("IntegerRounding", func(t *testing.T) {
+		screen := NewRankingScreen()
+		screen.proposals = createTestProposalsForRanking()
+
+		config := data.DefaultSessionConfig()
+		config.Elo.OutputMin = 0.0
+		config.Elo.OutputMax = 100.0
+		config.Elo.UseDecimals = false
+
+		mockApp := &RankingMockAppWithConfig{
+			RankingMockApp: RankingMockApp{
+				proposals: screen.proposals,
+			},
+			config: &config,
+		}
+		screen.app = mockApp
+
+		// Test that scores are rounded to integers
+		score := screen.calculateExportScore(1550.0)
+		if score != float64(int(score)) {
+			t.Errorf("Expected integer score when UseDecimals=false, got %.2f", score)
+		}
+	})
+}
+
+func TestRankingScreen_FormatExportScore(t *testing.T) {
+	t.Run("FormatsAsInteger", func(t *testing.T) {
+		screen := NewRankingScreen()
+
+		config := data.DefaultSessionConfig()
+		config.Elo.UseDecimals = false
+
+		mockApp := &RankingMockAppWithConfig{
+			config: &config,
+		}
+		screen.app = mockApp
+
+		formatted := screen.formatExportScore(42.7)
+		if formatted != "42" {
+			t.Errorf("Expected '42', got '%s'", formatted)
+		}
+	})
+
+	t.Run("FormatsAsDecimal", func(t *testing.T) {
+		screen := NewRankingScreen()
+
+		config := data.DefaultSessionConfig()
+		config.Elo.UseDecimals = true
+
+		mockApp := &RankingMockAppWithConfig{
+			config: &config,
+		}
+		screen.app = mockApp
+
+		formatted := screen.formatExportScore(3.14159)
+		if formatted != "3.1" {
+			t.Errorf("Expected '3.1', got '%s'", formatted)
+		}
+	})
 }

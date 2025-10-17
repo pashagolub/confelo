@@ -6,6 +6,7 @@ package data
 import (
 	"fmt"
 	"os"
+	"strconv"
 	"strings"
 
 	"github.com/jessevdk/go-flags"
@@ -184,8 +185,8 @@ func CreateSessionConfigFromCLI(opts *CLIOptions) (*SessionConfig, error) {
 	config.Elo.InitialRating = opts.InitialRating
 	config.UI.ComparisonMode = opts.ComparisonMode
 
-	// Parse output scale to set OutputMin and OutputMax
-	if err := applyOutputScale(opts.OutputScale); err != nil {
+	// Parse output scale to set OutputMin, OutputMax, and UseDecimals
+	if err := applyOutputScale(&config, opts.OutputScale); err != nil {
 		return nil, fmt.Errorf("failed to parse output scale: %w", err)
 	}
 
@@ -201,7 +202,7 @@ func CreateSessionConfigFromCLI(opts *CLIOptions) (*SessionConfig, error) {
 }
 
 // applyOutputScale parses the output scale string and applies it to config
-func applyOutputScale(scale string) error {
+func applyOutputScale(config *SessionConfig, scale string) error {
 	if scale == "" {
 		return nil // Use defaults
 	}
@@ -212,7 +213,29 @@ func applyOutputScale(scale string) error {
 		return fmt.Errorf("invalid scale format: %s", scale)
 	}
 
-	// For now, just validate the format - full parsing will be implemented later
-	// This satisfies the TDD approach by providing basic validation
+	// Parse min value
+	minVal, err := strconv.ParseFloat(strings.TrimSpace(parts[0]), 64)
+	if err != nil {
+		return fmt.Errorf("invalid minimum value in scale '%s': %w", scale, err)
+	}
+
+	// Parse max value
+	maxVal, err := strconv.ParseFloat(strings.TrimSpace(parts[1]), 64)
+	if err != nil {
+		return fmt.Errorf("invalid maximum value in scale '%s': %w", scale, err)
+	}
+
+	// Validate range
+	if minVal >= maxVal {
+		return fmt.Errorf("minimum value (%f) must be less than maximum value (%f)", minVal, maxVal)
+	}
+
+	// Set config values
+	config.Elo.OutputMin = minVal
+	config.Elo.OutputMax = maxVal
+
+	// Determine if we should use decimals based on whether the input contains decimal points
+	config.Elo.UseDecimals = strings.Contains(parts[0], ".") || strings.Contains(parts[1], ".")
+
 	return nil
 }

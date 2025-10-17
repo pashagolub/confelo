@@ -228,6 +228,34 @@ func (c *CSVConfig) Validate() error {
 	return nil
 }
 
+// CalculateExportScore converts an Elo rating to the output scale defined in the configuration
+// It performs linear scaling from [MinRating, MaxRating] to [OutputMin, OutputMax]
+// and respects the UseDecimals setting for formatting
+func (e *EloConfig) CalculateExportScore(eloScore float64) float64 {
+	// Clamp the Elo score to the valid rating range
+	clampedScore := eloScore
+	if clampedScore < e.MinRating {
+		clampedScore = e.MinRating
+	}
+	if clampedScore > e.MaxRating {
+		clampedScore = e.MaxRating
+	}
+
+	// Linear scaling formula: output = outputMin + (score - minRating) * (outputMax - outputMin) / (maxRating - minRating)
+	ratingRange := e.MaxRating - e.MinRating
+	outputRange := e.OutputMax - e.OutputMin
+
+	normalized := (clampedScore - e.MinRating) / ratingRange
+	exportScore := e.OutputMin + (normalized * outputRange)
+
+	// Round to integer if UseDecimals is false
+	if !e.UseDecimals {
+		return float64(int(exportScore + 0.5)) // Round to nearest integer
+	}
+
+	return exportScore
+}
+
 // Validate checks that Elo configuration is valid
 func (e *EloConfig) Validate() error {
 	// K-factor validation

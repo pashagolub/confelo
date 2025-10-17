@@ -149,9 +149,11 @@ export:
 		assert.Equal(t, 15, config.Convergence.TargetAccepted) // CLI parameter
 
 		// Non-specified values should use defaults
-		assert.Equal(t, 32, config.Elo.KFactor)     // Default value
-		assert.Equal(t, 0.0, config.Elo.MinRating)  // Default value
-		assert.Equal(t, 10.0, config.Elo.OutputMax) // Default value
+		assert.Equal(t, 32, config.Elo.KFactor)      // Default value
+		assert.Equal(t, 0.0, config.Elo.MinRating)   // Default value
+		assert.Equal(t, 0.0, config.Elo.OutputMin)   // Default output scale min (from "0-100")
+		assert.Equal(t, 100.0, config.Elo.OutputMax) // Default output scale max (from "0-100")
+		assert.False(t, config.Elo.UseDecimals)      // Default output scale uses integers
 
 		// Test engine works with overridden configuration
 		engineConfig := elo.Config{

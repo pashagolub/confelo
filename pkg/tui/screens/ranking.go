@@ -30,6 +30,7 @@ type SortField int
 const (
 	SortByRank SortField = iota
 	SortByScore
+	SortByExportScore
 	SortByTitle
 	SortBySpeaker
 	SortByConfidence
@@ -144,14 +145,14 @@ func (rs *RankingScreen) setupUI() {
 
 // setupTableHeaders configures the ranking table headers
 func (rs *RankingScreen) setupTableHeaders() {
-	headers := []string{"Rank", "Score", "Confidence", "Title", "Speaker"}
+	headers := []string{"Rank", "Score", "Export", "Confidence", "Title", "Speaker"}
 	for col, header := range headers {
 		cell := tview.NewTableCell(header).
 			SetTextColor(tcell.ColorYellow).
 			SetAlign(tview.AlignCenter).
 			SetSelectable(false).
 			SetExpansion(1)
-		if col == 3 { // Title column gets more space
+		if col == 4 { // Title column gets more space
 			cell.SetExpansion(4)
 		}
 		rs.rankingTable.SetCell(0, col, cell)
@@ -296,6 +297,96 @@ func (rs *RankingScreen) hasSimilarScores(proposal data.Proposal, threshold floa
 	return similarCount >= 2
 }
 
+// calculateExportScore converts an Elo score to the export scale
+// Uses the actual min/max Elo scores from current proposals for better scaling
+func (rs *RankingScreen) calculateExportScore(eloScore float64) float64 {
+	// Get config for output scale settings
+	var outputMin, outputMax float64
+	var useDecimals bool
+	
+	if appInterface, ok := rs.app.(interface{ GetConfig() *data.SessionConfig }); ok {
+		config := appInterface.GetConfig()
+		if config != nil {
+			outputMin = config.Elo.OutputMin
+			outputMax = config.Elo.OutputMax
+			useDecimals = config.Elo.UseDecimals
+		}
+	} else {
+		// Use defaults if config not available
+		defaultConfig := data.DefaultEloConfig()
+		outputMin = defaultConfig.OutputMin
+		outputMax = defaultConfig.OutputMax
+		useDecimals = defaultConfig.UseDecimals
+	}
+
+	// Calculate actual min/max from current proposals
+	if len(rs.proposals) == 0 {
+		return outputMin // No proposals, return minimum
+	}
+
+	minElo := rs.proposals[0].Score
+	maxElo := rs.proposals[0].Score
+	
+	for _, proposal := range rs.proposals {
+		if proposal.Score < minElo {
+			minElo = proposal.Score
+		}
+		if proposal.Score > maxElo {
+			maxElo = proposal.Score
+		}
+	}
+
+	// Handle edge case where all proposals have the same score
+	if minElo == maxElo {
+		// Return middle of output scale
+		exportScore := outputMin + (outputMax-outputMin)/2.0
+		if !useDecimals {
+			return float64(int(exportScore + 0.5))
+		}
+		return exportScore
+	}
+
+	// Linear scaling from actual [minElo, maxElo] to [outputMin, outputMax]
+	eloRange := maxElo - minElo
+	outputRange := outputMax - outputMin
+	
+	// Clamp to actual range
+	clampedScore := eloScore
+	if clampedScore < minElo {
+		clampedScore = minElo
+	}
+	if clampedScore > maxElo {
+		clampedScore = maxElo
+	}
+	
+	normalized := (clampedScore - minElo) / eloRange
+	exportScore := outputMin + (normalized * outputRange)
+
+	// Round to integer if UseDecimals is false
+	if !useDecimals {
+		return float64(int(exportScore + 0.5))
+	}
+
+	return exportScore
+}
+
+// formatExportScore formats the export score based on the UseDecimals setting
+func (rs *RankingScreen) formatExportScore(exportScore float64) string {
+	// Try to get the config from the app to check UseDecimals
+	useDecimals := true // default
+	if appInterface, ok := rs.app.(interface{ GetConfig() *data.SessionConfig }); ok {
+		config := appInterface.GetConfig()
+		if config != nil {
+			useDecimals = config.Elo.UseDecimals
+		}
+	}
+
+	if useDecimals {
+		return fmt.Sprintf("%.1f", exportScore)
+	}
+	return fmt.Sprintf("%d", int(exportScore))
+}
+
 // sortProposals sorts the filtered proposals by the current sort criteria
 func (rs *RankingScreen) sortProposals() {
 	sort.Slice(rs.proposals, func(i, j int) bool {
@@ -308,6 +399,11 @@ func (rs *RankingScreen) sortProposals() {
 		case SortByScore:
 			// For score sorting, higher scores should come first by default
 			result = rs.proposals[i].Score > rs.proposals[j].Score
+		case SortByExportScore:
+			// For export score sorting, higher export scores should come first
+			exportI := rs.calculateExportScore(rs.proposals[i].Score)
+			exportJ := rs.calculateExportScore(rs.proposals[j].Score)
+			result = exportI > exportJ
 		case SortByTitle:
 			result = strings.Compare(rs.proposals[i].Title, rs.proposals[j].Title) < 0
 		case SortBySpeaker:
@@ -370,11 +466,19 @@ func (rs *RankingScreen) addProposalRow(row int, proposal data.Proposal) {
 			SetAlign(tview.AlignCenter).
 			SetTextColor(scoreColor))
 
+	// Export Score - convert Elo score to output scale
+	exportScore := rs.calculateExportScore(proposal.Score)
+	exportText := rs.formatExportScore(exportScore)
+	rs.rankingTable.SetCell(row, 2,
+		tview.NewTableCell(exportText).
+			SetAlign(tview.AlignCenter).
+			SetTextColor(scoreColor)) // Use same color as regular score
+
 	// Confidence indicator
 	confidence := rs.calculateConfidence(proposal)
 	confidenceText := fmt.Sprintf("%.0f%%", confidence)
 	confidenceColor := rs.getConfidenceColor(confidence)
-	rs.rankingTable.SetCell(row, 2,
+	rs.rankingTable.SetCell(row, 3,
 		tview.NewTableCell(confidenceText).
 			SetAlign(tview.AlignCenter).
 			SetTextColor(confidenceColor))
@@ -384,7 +488,7 @@ func (rs *RankingScreen) addProposalRow(row int, proposal data.Proposal) {
 	if len(title) > 60 {
 		title = title[:57] + "..."
 	}
-	rs.rankingTable.SetCell(row, 3,
+	rs.rankingTable.SetCell(row, 4,
 		tview.NewTableCell(title).
 			SetAlign(tview.AlignLeft).
 			SetTextColor(tcell.ColorWhite).
@@ -395,7 +499,7 @@ func (rs *RankingScreen) addProposalRow(row int, proposal data.Proposal) {
 	if len(speaker) > 20 {
 		speaker = speaker[:17] + "..."
 	}
-	rs.rankingTable.SetCell(row, 4,
+	rs.rankingTable.SetCell(row, 5,
 		tview.NewTableCell(speaker).
 			SetAlign(tview.AlignLeft).
 			SetTextColor(tcell.ColorLightBlue))
@@ -425,7 +529,7 @@ func (rs *RankingScreen) getConfidenceColor(confidence float64) tcell.Color {
 
 // updateStatusBar updates the status bar with current information
 func (rs *RankingScreen) updateStatusBar() {
-	sortFieldName := []string{"Rank", "Score", "Title", "Speaker", "Confidence"}[rs.sortField]
+	sortFieldName := []string{"Rank", "Score", "Export", "Title", "Speaker", "Confidence"}[rs.sortField]
 	sortOrderName := map[SortOrder]string{SortAsc: "↑", SortDesc: "↓"}[rs.sortOrder]
 
 	status := fmt.Sprintf("[blue]S: Sort (%s) | O: Order (%s) | Use arrow keys to navigate[-]",
@@ -435,7 +539,7 @@ func (rs *RankingScreen) updateStatusBar() {
 
 // cycleSortField cycles through available sort fields
 func (rs *RankingScreen) cycleSortField() {
-	rs.sortField = SortField((int(rs.sortField) + 1) % 5)
+	rs.sortField = SortField((int(rs.sortField) + 1) % 6)
 	rs.sortProposals()
 	rs.updateDisplay()
 }
