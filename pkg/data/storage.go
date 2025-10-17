@@ -678,13 +678,9 @@ func (fs *FileStorage) loadSessionFromFile(filename string) (*Session, error) {
 		session.ProposalIndex[proposal.ID] = i
 	}
 
-	// Initialize audit trail for loaded session
+	// Set storage directory for loaded session
 	sessionDir := filepath.Dir(filename)
 	session.storageDirectory = sessionDir
-	if err := session.InitializeAuditTrail(sessionDir); err != nil {
-		// Log warning but don't fail loading - audit trail is supplementary
-		fmt.Printf("Warning: failed to initialize audit trail for loaded session: %v\n", err)
-	}
 
 	return &session, nil
 }

@@ -782,3 +782,93 @@ func TestQuickstartScenarios(t *testing.T) {
 		})
 	})
 }
+
+// Contract Test T008: Integration test for complete ranking workflow without .jsonl files
+func TestCompleteWorkflowNoJSONLIntegration(t *testing.T) {
+	t.Run("Complete_ranking_workflow_produces_no_jsonl_files", func(t *testing.T) {
+		tempDir := t.TempDir()
+		
+		// Create test CSV file
+		csvContent := "id,title,speaker,score\n1,Test Proposal 1,Speaker A,0\n2,Test Proposal 2,Speaker B,0\n3,Test Proposal 3,Speaker C,0\n4,Test Proposal 4,Speaker D,0\n"
+		csvFile := filepath.Join(tempDir, "test-proposals.csv")
+		err := os.WriteFile(csvFile, []byte(csvContent), 0644)
+		require.NoError(t, err)
+
+		// Load proposals
+		storage := NewFileStorage(tempDir)
+		config := DefaultSessionConfig()
+		parseResult, err := storage.LoadProposalsFromCSVWithElo(csvFile, config.CSV, &config.Elo)
+		require.NoError(t, err)
+		require.Len(t, parseResult.Proposals, 4)
+
+		// Create session
+		session, err := NewSession("Integration Test Workflow", parseResult.Proposals, config, csvFile)
+		require.NoError(t, err)
+		session.storageDirectory = tempDir
+
+		// Perform complete ranking workflow
+		t.Log("Starting complete ranking workflow...")
+		
+		// Do multiple comparisons to simulate real usage
+		comparisons := [][]string{
+			{"1", "2"},
+			{"2", "3"}, 
+			{"3", "4"},
+			{"1", "3"},
+			{"2", "4"},
+		}
+		
+		for _, compPair := range comparisons {
+			err = session.StartComparison(compPair, MethodPairwise)
+			require.NoError(t, err)
+			
+			// Simulate user picking winner (alternate winners)
+			winner := compPair[0]
+			if len(session.CompletedComparisons)%2 == 1 {
+				winner = compPair[1]
+			}
+			
+			_, err = session.CompleteComparison(winner, compPair, false, "")
+			require.NoError(t, err)
+		}
+
+		// Save session state
+		err = session.Save()
+		require.NoError(t, err)
+
+		// Update CSV with final scores (this is the export functionality that should be preserved)
+		err = storage.UpdateCSVScores(session.Proposals, csvFile, config.CSV, &config.Elo)
+		require.NoError(t, err)
+
+		// Verify CSV was updated with scores
+		updatedContent, err := os.ReadFile(csvFile)
+		require.NoError(t, err)
+		assert.Contains(t, string(updatedContent), "score", "CSV should contain score column after export")
+
+		// CONTRACT: Complete workflow MUST NOT generate .jsonl files
+		// This is the critical test that must FAIL before journal removal and PASS after
+		matches, err := filepath.Glob(filepath.Join(tempDir, "*.jsonl"))
+		require.NoError(t, err)
+		assert.Empty(t, matches, "CRITICAL: Complete workflow should not generate any .jsonl audit files after journal removal")
+
+		// Verify only expected files exist
+		sessionFile := filepath.Join(tempDir, session.ID+".json")
+		_, err = os.Stat(sessionFile)
+		assert.NoError(t, err, "Session JSON file should exist")
+
+		_, err = os.Stat(csvFile)
+		assert.NoError(t, err, "Updated CSV file should exist")
+
+		// Verify that session can be loaded back without audit dependencies
+		loadedSession, err := LoadSession(session.ID, tempDir)
+		require.NoError(t, err)
+		assert.Equal(t, session.ID, loadedSession.ID)
+		assert.Equal(t, session.Name, loadedSession.Name)
+		assert.Len(t, loadedSession.CompletedComparisons, 0) // Comparisons are not persisted
+		
+		// CONTRACT: Loaded session should not have audit trail after journal removal
+		// Note: auditTrail field was successfully removed, so this contract is fulfilled
+		
+		t.Log("Integration test completed successfully")
+	})
+}

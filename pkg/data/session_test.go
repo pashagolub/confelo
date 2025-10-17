@@ -499,38 +499,6 @@ func TestMatchupOptimization(t *testing.T) {
 	}
 }
 
-// Test Audit Trail
-func TestAuditTrail(t *testing.T) {
-	proposals := createTestProposals()
-	config := createTestConfig()
-
-	session, err := NewSession("Test Session", proposals, config, "test.csv")
-	require.NoError(t, err)
-
-	mockEngine := NewMockEloEngine()
-
-	// Get initial audit trail
-	auditTrail := session.GetAuditTrail()
-	assert.Len(t, auditTrail, 1) // Should have session creation event
-	assert.Equal(t, "session_created", auditTrail[0].EventType)
-
-	// Perform a comparison
-	err = session.StartComparison([]string{"prop1", "prop2"}, MethodPairwise)
-	require.NoError(t, err)
-	err = session.ProcessPairwiseComparison("prop1", "prop2", mockEngine)
-	require.NoError(t, err)
-
-	// Check updated audit trail
-	auditTrail = session.GetAuditTrail()
-	assert.GreaterOrEqual(t, len(auditTrail), 3) // Session creation + comparison + Elo updates
-
-	// Verify events are in chronological order
-	for i := 1; i < len(auditTrail); i++ {
-		assert.True(t, auditTrail[i].Timestamp.After(auditTrail[i-1].Timestamp) ||
-			auditTrail[i].Timestamp.Equal(auditTrail[i-1].Timestamp))
-	}
-}
-
 // Test Thread Safety
 func TestThreadSafety(t *testing.T) {
 	proposals := createTestProposals()
@@ -555,7 +523,6 @@ func TestThreadSafety(t *testing.T) {
 			_ = session.GetComparisonHistory()
 			_ = session.GetConvergenceMetrics()
 			_ = session.GetMatchupHistory()
-			_ = session.GetAuditTrail()
 			_ = session.GetOptimalMatchups(3)
 		}()
 	}
