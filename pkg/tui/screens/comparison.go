@@ -115,8 +115,8 @@ func (cs *ComparisonScreen) setupUI() {
 
 	// Main container: left panel (70%) and right panel (30%)
 	cs.container.
-		AddItem(cs.leftPanel, 0, 7, true).
-		AddItem(cs.rightPanel, 0, 3, false)
+		AddItem(cs.leftPanel, 0, 75, true).
+		AddItem(cs.rightPanel, 0, 25, false)
 
 	// Set up input handling
 	cs.container.SetInputCapture(cs.handleInput)
@@ -183,12 +183,7 @@ func (cs *ComparisonScreen) formatProposalContent(proposal data.Proposal) string
 
 	// Abstract (if available)
 	if proposal.Abstract != "" {
-		abstract := proposal.Abstract
-		// Truncate long abstracts for better comparison view
-		if len(abstract) > 300 {
-			abstract = abstract[:297] + "..."
-		}
-		content.WriteString(fmt.Sprintf("[green]Abstract:[-]\n%s\n\n", abstract))
+		content.WriteString(fmt.Sprintf("[green]Abstract:[-]\n%s\n\n", proposal.Abstract))
 	}
 
 	// Current rating
@@ -1142,7 +1137,7 @@ func (cs *ComparisonScreen) updateProgress() {
 			stabilityProgress = float64(stableCount) / float64(targetTop) * 100
 		}
 
-		progress = fmt.Sprintf("Moves: %d | Progress: %.0f%% | Stability: %.0f%%%s",
+		progress = fmt.Sprintf("Moves: %d\nProgress: %.0f%%\nStability: %.0f%%%s",
 			completed, convergencePercent, stabilityProgress, convergenceStatus)
 	} else {
 		// Traditional completion percentage - calculate theoretical maximum
