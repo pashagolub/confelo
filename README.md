@@ -1,23 +1,32 @@
 # Confelo - Conference Talk Ranking System
 
-A privacy-first terminal user interface application for ranking conference talk proposals using the Elo rating system. Features intelligent matchup selection, convergence detection, and comprehensive audit trails.
+A privacy-first terminal application for ranking conference talk proposals using the proven Elo rating system.
 
-## Features
+## Why Elo Rating for Conference Talks?
 
-- **Privacy-First**: All data processing happens locally - no external network dependencies
-- **Elo Rating System**: Uses proven Chess Elo mathematics for reliable ranking
-- **Intelligent Comparisons**: Smart matchup selection reduces total comparison time
-- **Multi-Proposal Support**: Handle pairwise, trio, and quartet comparisons efficiently
-- **Convergence Detection**: Automatic stopping criteria based on rating stability
-- **Audit Trails**: Complete comparison history for transparency and reproducibility
-- **Flexible Input/Output**: CSV import/export with configurable formats
-- **Cross-Platform**: Works on Linux, macOS, and Windows terminal environments
+The **Elo rating system** was invented by Arpad Elo for chess rankings, but it's perfect for conference talk selection because:
+
+- **Relative Comparison**: Instead of scoring talks in isolation, you compare them head-to-head, which mirrors how program committees naturally think
+- **Fewer Decisions**: With 50 proposals, scoring each individually requires 50 decisions, but Elo ranking can produce reliable results with just 20-30 comparisons
+- **Handles Subjectivity**: Different reviewers have different standards - Elo focuses on relative preferences rather than absolute scores
+- **Proven Mathematics**: Used successfully in chess, sports rankings, and online gaming for decades
+- **Confidence Building**: Naturally identifies when you've done enough comparisons to trust the ranking
+
+**Perfect for**: Conference program committees, hackathon judging, grant proposal review, or any scenario where you need to rank subjective submissions.
+
+## Key Features
+
+- **Privacy-First**: All data stays on your computer - no internet required
+- **Smart Comparisons**: Focuses on close matchups where your input matters most  
+- **Multiple Formats**: Compare 2, 3, or 4 proposals at once
+- **Automatic Stopping**: Tells you when you've done enough comparisons
+- **CSV Import/Export**: Works with your existing spreadsheets
 
 ## Quick Start
 
 ### Prerequisites
 
-- Go 1.21 or later
+- Go 1.25 or later
 - Terminal with color support (recommended)
 
 ### Installation
@@ -28,153 +37,142 @@ git clone https://github.com/pashagolub/confelo.git
 cd confelo
 
 # Build the application
-go build -o confelo ./cmd/confelo
-
-# Run with sample data
-./confelo compare --input testdata/proposals.csv
+go build ./cmd/confelo
 ```
 
 ### Basic Usage
 
-1. **Prepare your data**: Create a CSV file with conference proposals
+1. **Prepare your data**: Create/download a CSV file with conference proposals
    - Required columns: `id`, `title`, `speaker`
-   - Optional: `abstract`, `track`, custom metadata columns
+   - Optional: `abstract`, `track`, and other metadata columns
 
-2. **Start ranking session**:
-
-   ```bash
-   ./confelo compare --input proposals.csv
-   ```
-
-3. **Make comparisons**: Use the interactive TUI to compare proposals
-   - Arrow keys to navigate
-   - Enter to select/confirm choices
-   - Tab to switch between comparison modes
-   - Esc to return to main menu
-
-4. **Export results**:
+2. **Start a new ranking session**:
 
    ```bash
-   ./confelo export --session latest --output ranked_proposals.csv
+   # Linux/macOS
+   ./confelo --session-name "MyConf2025" --input proposals.csv
+   
+   # Windows
+   confelo.exe --session-name "MyConf2025" --input proposals.csv
    ```
 
-## Development
+3. **Resume an existing session** (no input file needed):
 
-### Project Structure
+   ```bash
+   ./confelo --session-name "MyConf2025"
+   ```
 
-```sh
-cmd/confelo/          # CLI application entry point
-pkg/
-├── elo/             # Core Elo rating engine
-├── data/            # Data models and persistence
-├── tui/             # Terminal user interface
-└── journal/         # Audit logging and export
-testdata/            # Sample data for testing
-```
+4. **Make comparisons**: Use the interactive terminal interface to compare proposals
+   - Number keys to enter proposals order
+   - Enter to select your preference
+   - 'r' key to view current rankings
+   - 'e' key to export results
+   - Ctrl+C to exit and save
 
-### Build and Test
+## How It Works
 
-```bash
-# Run all tests
-go test ./...
+**Confelo** automatically detects whether you're starting a new session or resuming an existing one based on the session name you provide. No subcommands needed!
 
-# Run tests with coverage
-go test -cover ./...
+- **New Session**: If the session doesn't exist, you must provide a CSV file with `--input`
+- **Resume Session**: If the session exists, it loads your previous progress
 
-# Run linting
-golangci-lint run
+The application uses the **Elo rating system** to intelligently select which proposals to compare next, focusing on matchups where your decision will have the most impact on the final ranking.
 
-# Build for current platform
-go build ./cmd/confelo
+## Options
 
-# Cross-compilation examples
-GOOS=linux GOARCH=amd64 go build ./cmd/confelo
-GOOS=darwin GOARCH=amd64 go build ./cmd/confelo
-GOOS=windows GOARCH=amd64 go build ./cmd/confelo
-```
-
-### Quality Standards
-
-This project follows constitutional principles for code quality:
-
-- **Test Coverage**: >90% for core logic, >70% for UI components
-- **Code Quality**: Zero golangci-lint violations
-- **Performance**: <200ms p95 response time, <100MB memory usage
-- **Documentation**: All public APIs documented
-- **Cross-Platform**: Tested on Linux, macOS, Windows
-
-## Configuration
-
-### CLI Options
+All configuration is done via command-line arguments:
 
 ```bash
-confelo compare [flags]
-  --input string     Input CSV file path
-  --config string    Configuration file path (optional)
-  --k-factor int     Elo K-factor (default: 32)
-  --initial int      Initial rating (default: 1500)
+confelo [OPTIONS]
 
-confelo export [flags]
-  --session string   Session ID or 'latest'
-  --output string    Output CSV file path
-  --format string    Export format: csv, json, yaml (default: csv)
+Required:
+  --session-name string    Session name (creates new if not found, resumes if exists)
+
+For new sessions:
+  --input string          CSV file path (required for new sessions)
+
+Optional settings:
+  --comparison-mode string    Comparison method: pairwise, trio, quartet (default: pairwise)
+  --initial-rating float      Starting Elo rating for proposals (default: 1500.0)
+  --output-scale string       Rating scale format like "0-100" or "1.0-5.0" (default: "0-100")
+  --target-accepted int       Number of proposals to accept (default: 10)
+
+Other options:
+  --verbose                Enable detailed output
+  --version               Show version information
+  --help                  Show help message
 ```
 
-### Configuration File
+### CSV Format Requirements
 
-Create `.confelo.yml` in your working directory:
+Your CSV file must have these columns with a header row:
 
-```yaml
-elo:
-  k_factor: 32
-  initial_rating: 1500
-  min_rating: 0
-  max_rating: 3000
+- `id` - Unique identifier for each proposal
+- `title` - Proposal title
+- `speaker` - Speaker name
 
-csv:
-  id_column: "id"
-  title_column: "title"
-  speaker_column: "speaker"
-  abstract_column: "abstract"
+Example CSV:
 
-convergence:
-  stability_threshold: 5.0
-  min_comparisons: 10
-  max_comparisons: 1000
+```csv
+id,title,speaker,abstract
+PROP001,"Building Resilient Microservices","Sarah Chen","In this talk, we'll explore..."
+PROP002,"Modern Web Development","Alex Kumar","Discover how TypeScript..."
 ```
+
+## Example Workflow
+
+1. **Start your first session**:
+
+   ```bash
+   ./confelo --session-name "DevConf2025" --input my-proposals.csv
+   ```
+
+2. **Make some comparisons** in the interactive interface, then exit (Ctrl+C)
+
+3. **Resume later** to continue where you left off:
+
+   ```bash
+   ./confelo --session-name "DevConf2025"
+   ```
+
+4. **Export results** when done:
+   - Press 'e' in the interface to export ranked proposals to `my-proposals.csv`
 
 ## Algorithm Details
 
-### Elo Rating System
+### How Elo Rating Works
 
-Uses standard Chess Elo mathematics:
+Confelo uses the standard Chess Elo rating system:
 
-- Expected score: `E_A = 1 / (1 + 10^((R_B - R_A) / 400))`
-- Rating update: `R'_A = R_A + K * (S_A - E_A)`
+- **Expected Score**: $E_A = \frac{1}{1 + 10^{(R_B - R_A) / 400}}$
+- **Rating Update**: $R'_A = R_A + K \cdot (S_A - E_A)$
+
+Where $K=32$ (sensitivity factor), and scores are $S_A = 1$ for win, $S_A = 0$ for loss.
 
 ### Multi-Proposal Comparisons
 
-- **Trio**: Decomposes into 3 pairwise games (A vs B, B vs C, C vs A)
-- **Quartet**: Decomposes into 6 pairwise games (all combinations)
-- Maintains mathematical consistency with pairwise Elo calculations
+- **Trio**: You rank 3 proposals (1st, 2nd, 3rd), which creates 3 pairwise comparisons
+- **Quartet**: You rank 4 proposals, which creates 6 pairwise comparisons
+- All modes use the same proven Elo mathematics for consistency
 
-### Convergence Detection
+### When to Stop
 
-Automatic stopping based on multiple criteria:
+Confelo automatically detects when you've done enough comparisons based on:
 
-- Rating stability (changes <5 points per comparison)
-- Ranking stability (top N unchanged for 3+ rounds)
-- Coverage completeness (minimum comparisons per proposal)
-- Variance thresholds (rating change variance approaches zero)
+- Rating stability (changes become smaller)
+- Ranking stability (top proposals stop changing positions)
+- Sufficient coverage (each proposal compared enough times)
 
 ## Contributing
 
+We welcome contributions! Please:
+
 1. Fork the repository
 2. Create a feature branch (`git checkout -b feature/amazing-feature`)
-3. Follow TDD: Write tests first, then implementation
-4. Ensure all quality gates pass (`go test ./...` and `golangci-lint run`)
-5. Commit changes (`git commit -m 'Add amazing feature'`)
-6. Push to branch (`git push origin feature/amazing-feature`)
+3. Write tests for your changes
+4. Ensure tests pass (`go test ./...`)
+5. Commit your changes (`git commit -m 'Add amazing feature'`)
+6. Push to your branch (`git push origin feature/amazing-feature`)
 7. Open a Pull Request
 
 ## License
@@ -185,4 +183,4 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 
 - Elo rating system invented by Arpad Elo for chess rankings
 - Inspired by conference program committee workflows
-- Built with Go's excellent standard library and terminal UI ecosystem
+- Built with Go's tview library for terminal interfaces
