@@ -1,5 +1,7 @@
 # Confelo - Conference Talk Ranking System
 
+[![Confelo screenshot](confelo.png)](confelo.png)
+
 A privacy-first terminal application for ranking conference talk proposals using the proven Elo rating system.
 
 ## Why Elo Rating for Conference Talks?
