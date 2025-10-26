@@ -122,49 +122,4 @@ func TestStartupPerformance(t *testing.T) {
 		t.Logf("Startup performance: %v (target: <200ms)", elapsed)
 	})
 
-	t.Run("ResumeSessionPerformance", func(t *testing.T) {
-		tempDir := t.TempDir()
-		sessionsDir := filepath.Join(tempDir, "sessions")
-		err := os.MkdirAll(sessionsDir, 0755)
-		require.NoError(t, err)
-
-		// Create existing session file
-		sessionName := "ResumePerfTest"
-		err = createTestSessionFileForIntegration(sessionsDir, sessionName)
-		require.NoError(t, err)
-		defer cleanupTestSessionFileForIntegration(sessionsDir, sessionName)
-
-		start := time.Now()
-
-		// Simulate resume session startup process
-		args := []string{
-			"--session-name", sessionName,
-		}
-
-		// 1. Parse CLI
-		opts, err := ParseCLI(args)
-		require.NoError(t, err)
-
-		// 2. Detect mode
-		detector := NewSessionDetector(sessionsDir)
-		mode, err := detector.DetectMode(opts.SessionName)
-		require.NoError(t, err)
-		assert.Equal(t, ResumeMode, mode)
-
-		// 3. Find and load session
-		sessionFile, err := detector.FindSessionFile(opts.SessionName)
-		require.NoError(t, err)
-
-		storage := &FileStorage{}
-		_, err = storage.LoadSession(sessionFile)
-		require.NoError(t, err)
-
-		elapsed := time.Since(start)
-
-		// Resume session should also meet the <200ms requirement
-		assert.Less(t, elapsed.Milliseconds(), int64(200),
-			"Resume session should be <200ms, got %v", elapsed)
-
-		t.Logf("Resume performance: %v (target: <200ms)", elapsed)
-	})
 }

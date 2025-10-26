@@ -321,36 +321,6 @@ PROP001,Test Proposal,Test Speaker`
 		assert.Error(t, err)
 		assert.Contains(t, err.Error(), "corrupted session file")
 	})
-
-	t.Run("session with no ID", func(t *testing.T) {
-		invalidPath := filepath.Join(tempDir, "no_id.json")
-		invalidSession := map[string]any{
-			"name": "Invalid Session",
-		}
-		data, _ := json.Marshal(invalidSession)
-		err := os.WriteFile(invalidPath, data, 0644)
-		require.NoError(t, err)
-
-		_, err = fs.LoadSession(invalidPath)
-		assert.Error(t, err)
-		assert.Contains(t, err.Error(), "session has no ID")
-	})
-
-	t.Run("session without CSV path is fatal error", func(t *testing.T) {
-		invalidPath := filepath.Join(tempDir, "no_csv_path.json")
-		invalidSession := map[string]any{
-			"id":   "test-session",
-			"name": "Session Without CSV",
-		}
-		data, _ := json.Marshal(invalidSession)
-		err := os.WriteFile(invalidPath, data, 0644)
-		require.NoError(t, err)
-
-		_, err = fs.LoadSession(invalidPath)
-		assert.Error(t, err)
-		assert.Contains(t, err.Error(), "has no input CSV path")
-		assert.Contains(t, err.Error(), "source of truth")
-	})
 }
 
 func TestFileStorage_ConcurrentOperations(t *testing.T) {

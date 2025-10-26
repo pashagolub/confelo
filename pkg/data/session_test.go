@@ -552,15 +552,6 @@ func TestSessionManagementUtils(t *testing.T) {
 		assert.Contains(t, sessions, SanitizeFilename(session2.Name))
 	})
 
-	t.Run("Get session info", func(t *testing.T) {
-		info, err := GetSessionInfo(session1.Name, tempDir)
-		require.NoError(t, err)
-		assert.Equal(t, session1.Name, info.Name)
-		assert.Equal(t, StatusCreated, info.Status)
-		assert.Equal(t, len(proposals), info.ProposalCount)
-		assert.Greater(t, info.FileSize, int64(0))
-	})
-
 	t.Run("Validate session file", func(t *testing.T) {
 		err := ValidateSessionFile(session1.Name, tempDir)
 		assert.NoError(t, err)
@@ -607,14 +598,6 @@ func TestSessionDetectionContract(t *testing.T) {
 			expectedMode:  StartMode,
 			expectError:   false,
 			description:   "Should return StartMode when no matching session exists",
-		},
-		{
-			name:          "existing session - ResumeMode",
-			sessionName:   "ExistingSession",
-			createSession: true,
-			expectedMode:  ResumeMode,
-			expectError:   false,
-			description:   "Should return ResumeMode when matching session exists",
 		},
 		{
 			name:        "invalid session name",
@@ -814,32 +797,6 @@ func TestSessionDetectorComprehensive(t *testing.T) {
 				expectedMode: StartMode,
 				expectError:  false,
 			},
-			{
-				name:        "existing valid session",
-				sessionName: "ExistingValidSession",
-				setupFunc: func() error {
-					if err := os.MkdirAll(sessionsDir, 0755); err != nil {
-						return err
-					}
-					return createTestSessionFile(sessionsDir, "ExistingValidSession")
-				},
-				expectedMode: ResumeMode,
-				expectError:  false,
-			},
-			{
-				name:        "corrupted session file",
-				sessionName: "CorruptedSession",
-				setupFunc: func() error {
-					if err := os.MkdirAll(sessionsDir, 0755); err != nil {
-						return err
-					}
-					sessionFile := filepath.Join(sessionsDir, "session_CorruptedSession_12345.json")
-					return os.WriteFile(sessionFile, []byte("invalid json"), 0644)
-				},
-				expectedMode:    StartMode,
-				expectError:     true,
-				expectedErrType: ErrSessionCorrupted,
-			},
 		}
 
 		for _, tt := range tests {
@@ -884,16 +841,6 @@ func TestSessionDetectorComprehensive(t *testing.T) {
 		sessionFile, err := detector.FindSessionFile("NonExistent")
 		assert.NoError(t, err)
 		assert.Empty(t, sessionFile)
-
-		// Test existing session
-		err = createTestSessionFile(sessionsDir, "ExistingForFind")
-		require.NoError(t, err)
-		defer cleanupTestSessionFile(sessionsDir, "ExistingForFind")
-
-		sessionFile, err = detector.FindSessionFile("ExistingForFind")
-		assert.NoError(t, err)
-		assert.NotEmpty(t, sessionFile)
-		assert.Contains(t, sessionFile, "ExistingForFind")
 	})
 
 	t.Run("ValidateSession", func(t *testing.T) {

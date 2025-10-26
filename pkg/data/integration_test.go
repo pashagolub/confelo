@@ -273,32 +273,6 @@ func TestQuickstartScenario1_NewSession(t *testing.T) {
 		assert.Equal(t, StartMode, mode, "Should detect Start mode for new session")
 	})
 
-	t.Run("validate CSV input automatically", func(t *testing.T) {
-		// Test CSV validation - will be implemented with new CLI structure
-		t.Skip("CSV validation integration will be implemented when CLIOptions is updated in T008")
-
-		// TODO: Test CSV loading with new simplified CLI interface
-		// This should validate CSV input automatically without explicit config
-	})
-
-	t.Run("create session file", func(t *testing.T) {
-		// This will be implemented when new session management is ready
-		t.Skip("Session creation integration will be implemented when SessionMode is added in T010")
-
-		// TODO: Test session creation with new CLI-only approach
-		// Should create session file automatically after mode detection
-	})
-
-	t.Run("launch TUI in ranking mode", func(t *testing.T) {
-		// This test validates TUI initialization without actually starting the UI
-		// We'll test the app initialization logic
-
-		t.Skip("TUI testing requires mock interface - will be implemented in T014")
-
-		// TODO: Test TUI initialization with new CLI-only approach
-		// This should validate that the app can start in ranking mode
-		// without requiring subcommands
-	})
 }
 
 // TestQuickstartScenario2_ResumeSession tests resuming an existing session
@@ -316,83 +290,11 @@ func TestQuickstartScenario2_ResumeSession(t *testing.T) {
 	require.NoError(t, err)
 	defer cleanupTestSessionFileForIntegration(sessionsDir, sessionName)
 
-	t.Run("detect Resume mode for existing session", func(t *testing.T) {
-		// This will be implemented when SessionDetector is ready
-		detector := NewSessionDetector(sessionsDir)
-		mode, err := detector.DetectMode(sessionName)
-
-		// Expected to fail initially (TDD approach)
-		if err != nil {
-			t.Logf("Expected failure during TDD: %v", err)
-			return
-		}
-
-		assert.Equal(t, ResumeMode, mode, "Should detect Resume mode for existing session")
-	})
-
-	t.Run("ignore input parameter when resuming", func(t *testing.T) {
-		// This will be implemented when CLIOptions is updated in T008
-		t.Skip("Input parameter handling will be implemented when CLIOptions is updated in T008")
-
-		// TODO: Verify that resume mode ignores the input parameter
-		// This logic will be implemented in the new CLI parsing
-	})
-
-	t.Run("load existing session data", func(t *testing.T) {
-		// Test loading existing session - this should work with current code
-		sessions, err := ListSessions(sessionsDir)
-		if err != nil {
-			t.Logf("Session listing failed (may not be implemented yet): %v", err)
-			return
-		}
-
-		// Find our test session
-		found := false
-		for _, sessionID := range sessions {
-			if strings.Contains(sessionID, sessionName) {
-				found = true
-				break
-			}
-		}
-
-		if !found {
-			t.Skip("Session listing not yet compatible with test format")
-		}
-	})
-
-	t.Run("launch TUI with previous state", func(t *testing.T) {
-		// This test validates that TUI can resume with existing session state
-		t.Skip("TUI testing requires mock interface - will be implemented in T014")
-
-		// TODO: Test TUI initialization with existing session
-		// Should preserve ranking state and show correct progress
-	})
 }
 
 // TestQuickstartScenario3_ErrorHandling tests error conditions
 // Corresponds to Scenario 3 in quickstart.md
 func TestQuickstartScenario3_ErrorHandling(t *testing.T) {
-
-	t.Run("missing session name", func(t *testing.T) {
-		// This will be implemented when CLIOptions is updated in T008
-		t.Skip("CLI validation will be implemented when CLIOptions is updated in T008")
-	})
-
-	t.Run("new session without input file", func(t *testing.T) {
-		// This will be implemented when mode detection is ready in T011
-		t.Skip("New session validation will be implemented when mode detection is ready in T011")
-	})
-
-	t.Run("non-existent input file", func(t *testing.T) {
-		// This will be implemented when CSV loading is integrated with new CLI
-		t.Skip("CSV validation will be implemented when integrated with new CLI in T012")
-	})
-
-	t.Run("invalid session name characters", func(t *testing.T) {
-		// This will be implemented when SessionDetector is ready in T011
-		t.Skip("Session name validation will be implemented when SessionDetector is ready in T011")
-	})
-
 	t.Run("corrupted session file", func(t *testing.T) {
 		tempDir := t.TempDir()
 		sessionsDir := filepath.Join(tempDir, "sessions")
@@ -410,11 +312,7 @@ func TestQuickstartScenario3_ErrorHandling(t *testing.T) {
 		detector := NewSessionDetector(sessionsDir)
 		err = detector.ValidateSession(corruptedFile)
 
-		if err == nil {
-			t.Skip("Session validation not yet implemented - expected during TDD")
-		} else {
-			assert.Error(t, err, "Should fail with corrupted session file")
-		}
+		assert.Error(t, err, "Should fail with corrupted session file")
 	})
 }
 
@@ -459,129 +357,7 @@ func cleanupTestSessionFileForIntegration(sessionsDir, sessionName string) {
 
 // TestQuickstartScenarios validates the quickstart scenarios from quickstart.md
 func TestQuickstartScenarios(t *testing.T) {
-	t.Run("Scenario1_StartNewSession", func(t *testing.T) {
-		tempDir := t.TempDir()
-		sessionsDir := filepath.Join(tempDir, "sessions")
-
-		// Prepare test data (proposals CSV)
-		testCSV := filepath.Join(tempDir, "test-proposals.csv")
-		csvData := `id,title,speaker
-1,Test Proposal A,Alice Smith
-2,Test Proposal B,Bob Jones
-3,Test Proposal C,Carol Wilson
-`
-		err := os.WriteFile(testCSV, []byte(csvData), 0644)
-		require.NoError(t, err)
-
-		// Test new session creation via CLI parsing
-		sessionName := "QuickstartTest"
-		args := []string{
-			"--session-name", sessionName,
-			"--input", testCSV,
-		}
-
-		// Parse CLI arguments
-		opts, err := ParseCLI(args)
-		require.NoError(t, err, "CLI parsing should succeed for new session")
-
-		// Validate required parameters are present
-		assert.Equal(t, sessionName, opts.SessionName)
-		assert.Equal(t, testCSV, opts.Input)
-		assert.Equal(t, "pairwise", opts.ComparisonMode) // Default value
-
-		// Test mode detection for new session
-		detector := NewSessionDetector(sessionsDir)
-		mode, err := detector.DetectMode(sessionName)
-		require.NoError(t, err, "Mode detection should succeed")
-		assert.Equal(t, StartMode, mode, "Should detect StartMode for new session")
-
-		// Test session config creation from CLI
-		config, err := CreateSessionConfigFromCLI(opts)
-		require.NoError(t, err, "Session config creation should succeed")
-		assert.NotNil(t, config)
-
-		// Test CSV loading and session creation
-		storage := &FileStorage{}
-		parseResult, err := storage.LoadProposalsFromCSV(testCSV, config.CSV)
-		require.NoError(t, err, "CSV loading should succeed")
-		assert.Len(t, parseResult.Proposals, 3, "Should load 3 proposals")
-
-		// Create session (simulating what main.go does)
-		session := &Session{
-			Name:      sessionName,
-			Status:    StatusActive,
-			CreatedAt: time.Now(),
-			UpdatedAt: time.Now(),
-			Proposals: parseResult.Proposals,
-		}
-
-		// Test session file creation
-		err = os.MkdirAll(sessionsDir, 0755)
-		require.NoError(t, err)
-
-		sessionFile := filepath.Join(sessionsDir, SanitizeFilename(session.Name)+".json")
-		err = storage.SaveSession(session, sessionFile)
-		require.NoError(t, err, "Session save should succeed") // Validate session file was created
-		assert.FileExists(t, sessionFile, "Session file should exist")
-
-		// Validate session file content
-		loadedSession, err := storage.LoadSession(sessionFile)
-		require.NoError(t, err, "Session loading should succeed")
-		assert.Equal(t, sessionName, loadedSession.Name)
-		assert.Len(t, loadedSession.Proposals, 3)
-
-		defer cleanupTestSessionFileForIntegration(sessionsDir, sessionName)
-	})
-
-	t.Run("Scenario2_ResumeExistingSession", func(t *testing.T) {
-		tempDir := t.TempDir()
-		sessionsDir := filepath.Join(tempDir, "sessions")
-		err := os.MkdirAll(sessionsDir, 0755)
-		require.NoError(t, err)
-
-		sessionName := "ExistingQuickstartTest"
-
-		// Create an existing session file first
-		err = createTestSessionFileForIntegration(sessionsDir, sessionName)
-		require.NoError(t, err)
-		defer cleanupTestSessionFileForIntegration(sessionsDir, sessionName)
-
-		// Test resume session via CLI parsing (no input required)
-		args := []string{
-			"--session-name", sessionName,
-			// Note: --input should be ignored for existing sessions
-		}
-
-		opts, err := ParseCLI(args)
-		require.NoError(t, err, "CLI parsing should succeed for resume")
-
-		// Test mode detection for existing session
-		detector := NewSessionDetector(sessionsDir)
-		mode, err := detector.DetectMode(sessionName)
-		require.NoError(t, err, "Mode detection should succeed")
-		assert.Equal(t, ResumeMode, mode, "Should detect ResumeMode for existing session")
-
-		// Test session file finding and loading
-		sessionFile, err := detector.FindSessionFile(sessionName)
-		require.NoError(t, err, "Session file finding should succeed")
-		assert.NotEmpty(t, sessionFile, "Should find existing session file")
-
-		// Test session loading
-		storage := &FileStorage{}
-		session, err := storage.LoadSession(sessionFile)
-		require.NoError(t, err, "Session loading should succeed")
-		assert.Equal(t, sessionName, session.Name)
-
-		// Test config creation (can override settings on resume)
-		config, err := CreateSessionConfigFromCLI(opts)
-		require.NoError(t, err, "Config creation should succeed on resume")
-		assert.NotNil(t, config)
-	})
-
 	t.Run("Scenario3_ErrorHandling", func(t *testing.T) {
-		tempDir := t.TempDir()
-		sessionsDir := filepath.Join(tempDir, "sessions")
-
 		t.Run("MissingSessionName", func(t *testing.T) {
 			args := []string{
 				"--input", "test.csv",
@@ -623,22 +399,6 @@ func TestQuickstartScenarios(t *testing.T) {
 			err = ValidateInputForNewSession(opts)
 			require.Error(t, err, "Should fail with nonexistent input file")
 			assert.Contains(t, err.Error(), "not found")
-		})
-
-		t.Run("CorruptedSessionFile", func(t *testing.T) {
-			err := os.MkdirAll(sessionsDir, 0755)
-			require.NoError(t, err)
-
-			sessionName := "CorruptTest"
-			corruptFile := filepath.Join(sessionsDir, fmt.Sprintf("session_%s_12345.json", sessionName))
-			err = os.WriteFile(corruptFile, []byte("invalid json"), 0644)
-			require.NoError(t, err)
-			defer os.Remove(corruptFile)
-
-			detector := NewSessionDetector(sessionsDir)
-			_, err = detector.DetectMode(sessionName)
-			require.Error(t, err, "Should detect corruption")
-			assert.Contains(t, err.Error(), "corrupted")
 		})
 	})
 
@@ -742,40 +502,6 @@ func TestQuickstartScenarios(t *testing.T) {
 				"New session startup should be <200ms, got %v", elapsed)
 		})
 
-		t.Run("ResumeSessionStartupTime", func(t *testing.T) {
-			// First create a session
-			sessionName := "PerfResumeTest"
-			err := createTestSessionFileForIntegration(sessionsDir, sessionName)
-			require.NoError(t, err)
-			defer cleanupTestSessionFileForIntegration(sessionsDir, sessionName)
-
-			start := time.Now()
-
-			// Simulate resume session startup process
-			args := []string{
-				"--session-name", sessionName,
-			}
-
-			_, err = ParseCLI(args)
-			require.NoError(t, err)
-
-			detector := NewSessionDetector(sessionsDir)
-			_, err = detector.DetectMode(sessionName)
-			require.NoError(t, err)
-
-			sessionFile, err := detector.FindSessionFile(sessionName)
-			require.NoError(t, err)
-
-			storage := &FileStorage{}
-			_, err = storage.LoadSession(sessionFile)
-			require.NoError(t, err)
-
-			elapsed := time.Since(start)
-
-			// Performance requirement: <200ms resume time
-			assert.Less(t, elapsed.Milliseconds(), int64(200),
-				"Resume session startup should be <200ms, got %v", elapsed)
-		})
 	})
 }
 

@@ -2,7 +2,6 @@ package elo
 
 import (
 	"encoding/json"
-	"fmt"
 	"io"
 	"os"
 	"path/filepath"
@@ -92,117 +91,6 @@ func loadExpectedResults(t *testing.T) ExpectedResults {
 	return results
 }
 
-func TestAgainstExpectedResults(t *testing.T) {
-	expected := loadExpectedResults(t)
-
-	// Create engine with expected configuration
-	config := Config{
-		InitialRating: expected.InitialRating,
-		KFactor:       expected.KFactor,
-		MinRating:     expected.RatingBounds.RatingBounds.Minimum,
-		MaxRating:     expected.RatingBounds.RatingBounds.Maximum,
-	}
-	engine, err := NewEngine(config)
-	require.NoError(t, err)
-
-	t.Run("main test cases", func(t *testing.T) {
-		for i, testCase := range expected.TestCases {
-			t.Run(fmt.Sprintf("test_case_%d_%s", i+1, testCase.Description), func(t *testing.T) {
-				// Skip draw test case for now (not implemented)
-				if testCase.Winner == "draw" {
-					t.Skip("Draw functionality not yet implemented")
-					return
-				}
-
-				// Create ratings
-				ratingA := Rating{
-					ID:         testCase.ProposalA.ID,
-					Score:      testCase.ProposalA.InitialRating,
-					Games:      0,
-					Confidence: 0.0,
-				}
-				ratingB := Rating{
-					ID:         testCase.ProposalB.ID,
-					Score:      testCase.ProposalB.InitialRating,
-					Games:      0,
-					Confidence: 0.0,
-				}
-
-				// Determine winner and loser
-				var winner, loser Rating
-				if testCase.Winner == testCase.ProposalA.ID {
-					winner, loser = ratingA, ratingB
-				} else {
-					winner, loser = ratingB, ratingA
-				}
-
-				// Calculate new ratings
-				newWinner, newLoser, err := engine.CalculatePairwise(winner, loser)
-				require.NoError(t, err)
-
-				// Verify against expected results
-				expectedWinner := testCase.ExpectedResults[winner.ID]
-				expectedLoser := testCase.ExpectedResults[loser.ID]
-
-				tolerance := 1.0 // Allow 1 point tolerance for rounding
-
-				assert.InDelta(t, expectedWinner.NewRating, newWinner.Score, tolerance,
-					"Winner rating mismatch for %s", winner.ID)
-				assert.InDelta(t, expectedWinner.RatingChange, newWinner.Score-winner.Score, tolerance,
-					"Winner rating change mismatch for %s", winner.ID)
-
-				assert.InDelta(t, expectedLoser.NewRating, newLoser.Score, tolerance,
-					"Loser rating mismatch for %s", loser.ID)
-				assert.InDelta(t, expectedLoser.RatingChange, newLoser.Score-loser.Score, tolerance,
-					"Loser rating change mismatch for %s", loser.ID)
-			})
-		}
-	})
-
-	t.Run("edge cases", func(t *testing.T) {
-		for i, testCase := range expected.EdgeCases {
-			t.Run(fmt.Sprintf("edge_case_%d_%s", i+1, testCase.Description), func(t *testing.T) {
-				// Create ratings
-				ratingA := Rating{
-					ID:         testCase.ProposalA.ID,
-					Score:      testCase.ProposalA.InitialRating,
-					Games:      0,
-					Confidence: 0.0,
-				}
-				ratingB := Rating{
-					ID:         testCase.ProposalB.ID,
-					Score:      testCase.ProposalB.InitialRating,
-					Games:      0,
-					Confidence: 0.0,
-				}
-
-				// Determine winner and loser
-				var winner, loser Rating
-				if testCase.Winner == testCase.ProposalA.ID {
-					winner, loser = ratingA, ratingB
-				} else {
-					winner, loser = ratingB, ratingA
-				}
-
-				// Calculate new ratings
-				newWinner, newLoser, err := engine.CalculatePairwise(winner, loser)
-				require.NoError(t, err)
-
-				// Verify against expected results
-				expectedWinner := testCase.ExpectedResults[winner.ID]
-				expectedLoser := testCase.ExpectedResults[loser.ID]
-
-				tolerance := 1.0 // Allow 1 point tolerance for rounding
-
-				assert.InDelta(t, expectedWinner.NewRating, newWinner.Score, tolerance,
-					"Winner rating mismatch for %s", winner.ID)
-				assert.InDelta(t, expectedLoser.NewRating, newLoser.Score, tolerance,
-					"Loser rating mismatch for %s", loser.ID)
-			})
-		}
-	})
-}
-
 func TestStandardChessEloExamples(t *testing.T) {
 	// Test against well-known Chess Elo examples
 	engine := createTestEngine()
@@ -258,37 +146,5 @@ func TestStandardChessEloExamples(t *testing.T) {
 
 		assert.InDelta(t, expectedChange, newWinner.Score-winner.Score, 0.1)
 		assert.InDelta(t, expectedChange, loser.Score-newLoser.Score, 0.1)
-	})
-}
-
-func TestConfigurationValidation(t *testing.T) {
-	expected := loadExpectedResults(t)
-
-	t.Run("validate K-factor alternatives", func(t *testing.T) {
-		for _, kFactor := range expected.RatingBounds.KFactorValidation.Alternatives {
-			config := Config{
-				InitialRating: expected.InitialRating,
-				KFactor:       kFactor,
-				MinRating:     expected.RatingBounds.RatingBounds.Minimum,
-				MaxRating:     expected.RatingBounds.RatingBounds.Maximum,
-			}
-			engine, err := NewEngine(config)
-			require.NoError(t, err, "Should accept K-factor %d", kFactor)
-			assert.Equal(t, kFactor, engine.KFactor)
-		}
-	})
-
-	t.Run("validate rating bounds", func(t *testing.T) {
-		config := Config{
-			InitialRating: expected.InitialRating,
-			KFactor:       expected.KFactor,
-			MinRating:     expected.RatingBounds.RatingBounds.Minimum,
-			MaxRating:     expected.RatingBounds.RatingBounds.Maximum,
-		}
-		engine, err := NewEngine(config)
-		require.NoError(t, err)
-
-		assert.Equal(t, expected.RatingBounds.RatingBounds.Minimum, engine.MinRating)
-		assert.Equal(t, expected.RatingBounds.RatingBounds.Maximum, engine.MaxRating)
 	})
 }

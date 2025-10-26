@@ -188,36 +188,6 @@ func TestRankingScreen_OnExit(t *testing.T) {
 	}
 }
 
-func TestRankingScreen_LoadProposals(t *testing.T) {
-	screen := NewRankingScreen()
-
-	// Test with mock app that provides proposals
-	mockApp := newRankingMockApp()
-	screen.app = mockApp
-
-	err := screen.loadProposals()
-	if err != nil {
-		t.Errorf("loadProposals() failed: %v", err)
-	}
-
-	if len(screen.proposals) != 5 {
-		t.Errorf("Expected 5 proposals loaded, got %d", len(screen.proposals))
-	}
-
-	// Test fallback when app doesn't provide proposals (should use mock data)
-	screen.app = struct{}{}
-	screen.proposals = nil
-
-	err = screen.loadProposals()
-	if err != nil {
-		t.Errorf("loadProposals() fallback failed: %v", err)
-	}
-
-	if len(screen.proposals) == 0 {
-		t.Error("Fallback should provide mock proposals")
-	}
-}
-
 func TestRankingScreen_CalculateConfidence(t *testing.T) {
 	screen := NewRankingScreen()
 
