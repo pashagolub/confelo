@@ -678,6 +678,30 @@ func (fs *FileStorage) loadSessionFromFile(filename string) (*Session, error) {
 		session.ProposalIndex[proposal.ID] = i
 	}
 
+	// Initialize or update ConvergenceMetrics based on loaded comparison counts
+	if session.ConvergenceMetrics == nil {
+		// Create new metrics if none exist (old session format)
+		session.ConvergenceMetrics = &ConvergenceMetrics{
+			SessionID:           session.ID,
+			TotalComparisons:    session.TotalComparisons,
+			AvgRatingChange:     0.0,
+			RatingVariance:      0.0,
+			RankingStability:    0.0,
+			CoveragePercentage:  0.0,
+			ConvergenceScore:    0.0,
+			LastCalculated:      time.Now(),
+			RecentRatingChanges: make([]float64, 0, 10),
+		}
+	} else {
+		// Update total comparisons count from persisted data
+		session.ConvergenceMetrics.TotalComparisons = session.TotalComparisons
+	}
+
+	// Initialize comparison counts map if nil (backward compatibility)
+	if session.ComparisonCounts == nil {
+		session.ComparisonCounts = make(map[string]int)
+	}
+
 	// Set storage directory for loaded session
 	sessionDir := filepath.Dir(filename)
 	session.storageDirectory = sessionDir

@@ -81,15 +81,17 @@ type Session struct {
 	UpdatedAt time.Time     `json:"updated_at"` // Last modification timestamp
 
 	// Configuration and data
-	Config         SessionConfig     `json:"config"`          // Session configuration
-	Proposals      []Proposal        `json:"-"`               // Collection of proposals (reloaded from CSV, never serialized)
-	ProposalScores map[string]float64 `json:"proposal_scores"` // Current scores by ID (lightweight persistence)
-	ProposalIndex  map[string]int    `json:"-"`               // Fast ID lookup (not serialized)
-	InputCSVPath   string            `json:"input_csv_path"`  // Original input CSV file path for export
+	Config         SessionConfig      `json:"config"`                    // Session configuration
+	Proposals      []Proposal         `json:"-"`                         // Collection of proposals (reloaded from CSV, never serialized)
+	ProposalScores map[string]float64 `json:"proposal_scores"`           // Current scores by ID (lightweight persistence)
+	ProposalIndex  map[string]int     `json:"-"`                         // Fast ID lookup (not serialized)
+	InputCSVPath   string             `json:"input_csv_path"`            // Original input CSV file path for export
 
-	// Comparison state (not persisted - only kept in memory during session)
-	CurrentComparison    *ComparisonState `json:"-"` // Active comparison state (not serialized)
-	CompletedComparisons []Comparison     `json:"-"` // Historical comparisons (not serialized)
+	// Comparison tracking (lightweight persistence for progress/confidence)
+	ComparisonCounts    map[string]int `json:"comparison_counts"`     // Per-proposal comparison count for confidence
+	TotalComparisons    int            `json:"total_comparisons"`     // Total comparisons performed for progress
+	CurrentComparison   *ComparisonState `json:"-"`                   // Active comparison state (not persisted)
+	CompletedComparisons []Comparison    `json:"-"`                   // Historical comparisons (not persisted)
 
 	// Analytics and optimization
 	ConvergenceMetrics *ConvergenceMetrics `json:"convergence_metrics"` // Progress tracking
@@ -227,6 +229,8 @@ func NewSession(name string, proposals []Proposal, config SessionConfig, inputCS
 		Proposals:            proposals,
 		ProposalIndex:        proposalIndex,
 		InputCSVPath:         inputCSVPath, // Store CSV path for reload on resume
+		ComparisonCounts:     make(map[string]int),
+		TotalComparisons:     0,
 		CurrentComparison:    nil,
 		CompletedComparisons: make([]Comparison, 0),
 		ConvergenceMetrics:   convergenceMetrics,

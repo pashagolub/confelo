@@ -389,18 +389,12 @@ func (a *App) GetComparisonCount(proposalID string) int {
 		return 0
 	}
 
-	count := 0
-	for _, comparison := range a.state.session.CompletedComparisons {
-		// Check if this proposal was involved in this comparison
-		for _, id := range comparison.ProposalIDs {
-			if id == proposalID {
-				count++
-				break // Only count once per comparison
-			}
-		}
+	// Use persisted comparison counts for efficiency and persistence
+	if count, exists := a.state.session.ComparisonCounts[proposalID]; exists {
+		return count
 	}
 
-	return count
+	return 0
 }
 
 // handleGlobalInput handles global keyboard shortcuts

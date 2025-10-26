@@ -301,7 +301,7 @@ func (cs *ComparisonScreen) loadNextComparison() error {
 	// Check convergence criteria before loading next comparison
 	config := cs.getConfig()
 	if config != nil && config.Convergence.EnableEarlyStopping {
-		completed := len(session.CompletedComparisons)
+		completed := session.TotalComparisons
 
 		// Check if we've reached minimum comparisons and convergence is achieved
 		if completed >= config.Convergence.MinComparisons {
@@ -632,6 +632,18 @@ func (cs *ComparisonScreen) executeMultiWayComparison() error {
 
 	session.CompletedComparisons = append(session.CompletedComparisons, comparison)
 
+	// Update lightweight comparison tracking for progress and confidence
+	session.TotalComparisons++
+	for _, proposalID := range cs.getProposalIDs() {
+		session.ComparisonCounts[proposalID]++
+	}
+
+	// Update convergence metrics to reflect new comparison
+	if session.ConvergenceMetrics != nil {
+		session.ConvergenceMetrics.TotalComparisons = session.TotalComparisons
+		session.ConvergenceMetrics.LastCalculated = time.Now()
+	}
+
 	// Save session back to app
 	if app, ok := cs.app.(interface{ SetSession(*data.Session) }); ok {
 		app.SetSession(session)
@@ -680,7 +692,7 @@ func (cs *ComparisonScreen) showCompletionMessage() {
 
 	// Show session statistics in the second card if available
 	if len(cs.proposalCards) > 1 && session != nil {
-		totalComparisons := len(session.CompletedComparisons)
+		totalComparisons := session.TotalComparisons
 		totalProposals := len(session.Proposals)
 
 		statsText := fmt.Sprintf("[blue::b]Session Statistics[white::-]\n\n[yellow]Comparisons:[-] %d\n[yellow]Proposals:[-] %d\n[yellow]Mode:[-] %s",
@@ -774,6 +786,18 @@ func (cs *ComparisonScreen) executeComparison() error {
 
 	session.CompletedComparisons = append(session.CompletedComparisons, comparison)
 
+	// Update lightweight comparison tracking for progress and confidence
+	session.TotalComparisons++
+	for _, proposalID := range cs.getProposalIDs() {
+		session.ComparisonCounts[proposalID]++
+	}
+
+	// Update convergence metrics to reflect new comparison
+	if session.ConvergenceMetrics != nil {
+		session.ConvergenceMetrics.TotalComparisons = session.TotalComparisons
+		session.ConvergenceMetrics.LastCalculated = time.Now()
+	}
+
 	// Save session back to app if possible
 	if app, ok := cs.app.(interface{ SetSession(*data.Session) }); ok {
 		app.SetSession(session)
@@ -840,7 +864,7 @@ func (cs *ComparisonScreen) checkTopTConvergence() bool {
 	}
 
 	// Need minimum comparisons before checking convergence
-	if len(session.CompletedComparisons) < config.Convergence.MinComparisons {
+	if session.TotalComparisons < config.Convergence.MinComparisons {
 		return false
 	}
 
@@ -870,7 +894,7 @@ func (cs *ComparisonScreen) checkTopTConvergence() bool {
 	}
 
 	// Simple convergence check: if we have enough comparisons and clear rating separation
-	totalComparisons := len(session.CompletedComparisons)
+	totalComparisons := session.TotalComparisons
 
 	// Enhanced convergence criteria for better confidence:
 	// 1. We have at least 2x the minimum comparisons
@@ -932,18 +956,12 @@ func (cs *ComparisonScreen) getProposalComparisonCount(proposalID string, sessio
 		return 0
 	}
 
-	count := 0
-	for _, comparison := range session.CompletedComparisons {
-		// Check if this proposal was involved in this comparison
-		for _, id := range comparison.ProposalIDs {
-			if id == proposalID {
-				count++
-				break // Only count once per comparison
-			}
-		}
+	// Use persisted comparison counts for efficiency
+	if count, exists := session.ComparisonCounts[proposalID]; exists {
+		return count
 	}
 
-	return count
+	return 0
 }
 
 // generateComparisonID creates a unique ID for a comparison
@@ -1081,7 +1099,7 @@ func (cs *ComparisonScreen) updateProgress() {
 		return
 	}
 
-	completed := len(session.CompletedComparisons)
+	completed := session.TotalComparisons
 	totalProposals := len(session.Proposals)
 
 	// Get convergence configuration

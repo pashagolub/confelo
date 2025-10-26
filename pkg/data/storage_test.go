@@ -224,11 +224,20 @@ func TestFileStorage_SaveSession(t *testing.T) {
 	tempDir := t.TempDir()
 	fs := NewFileStorage(filepath.Join(tempDir, "backups"))
 
+	// Create a test CSV file (CSV is source of truth)
+	csvPath := filepath.Join(tempDir, "test_proposals.csv")
+	csvContent := `id,title,speaker
+PROP001,Test Proposal,Test Speaker`
+	err := os.WriteFile(csvPath, []byte(csvContent), 0644)
+	require.NoError(t, err)
+
 	session := &Session{
-		ID:        "test-session",
-		Name:      "Test Session",
-		CreatedAt: time.Now(),
-		UpdatedAt: time.Now(),
+		ID:           "test-session",
+		Name:         "Test Session",
+		InputCSVPath: csvPath, // CSV path is required
+		CreatedAt:    time.Now(),
+		UpdatedAt:    time.Now(),
+		Config:       DefaultSessionConfig(),
 		Proposals: []Proposal{
 			{
 				ID:       "PROP001",
@@ -255,7 +264,10 @@ func TestFileStorage_SaveSession(t *testing.T) {
 
 		assert.Equal(t, session.ID, loadedSession.ID)
 		assert.Equal(t, session.Name, loadedSession.Name)
-		assert.Len(t, loadedSession.Proposals, 1)
+		// Proposals are not serialized anymore - they're reloaded from CSV
+		// Instead, ProposalScores are saved
+		assert.Len(t, loadedSession.ProposalScores, 1)
+		assert.Contains(t, loadedSession.ProposalScores, "PROP001")
 	})
 
 	t.Run("non-atomic save", func(t *testing.T) {
@@ -281,11 +293,20 @@ func TestFileStorage_LoadSession(t *testing.T) {
 	tempDir := t.TempDir()
 	fs := NewFileStorage(filepath.Join(tempDir, "backups"))
 
+	// Create a test CSV file (CSV is source of truth)
+	csvPath := filepath.Join(tempDir, "test_proposals.csv")
+	csvContent := `id,title,speaker
+PROP001,Test Proposal,Test Speaker`
+	err := os.WriteFile(csvPath, []byte(csvContent), 0644)
+	require.NoError(t, err)
+
 	session := &Session{
-		ID:        "test-session",
-		Name:      "Test Session",
-		CreatedAt: time.Now(),
-		UpdatedAt: time.Now(),
+		ID:           "test-session",
+		Name:         "Test Session",
+		InputCSVPath: csvPath, // CSV path is required
+		CreatedAt:    time.Now(),
+		UpdatedAt:    time.Now(),
+		Config:       DefaultSessionConfig(),
 	}
 
 	t.Run("load valid session", func(t *testing.T) {
@@ -308,6 +329,7 @@ func TestFileStorage_LoadSession(t *testing.T) {
 
 		assert.Equal(t, session.ID, loadedSession.ID)
 		assert.Equal(t, session.Name, loadedSession.Name)
+		assert.Equal(t, csvPath, loadedSession.InputCSVPath)
 	})
 
 	t.Run("file not found", func(t *testing.T) {
@@ -338,6 +360,22 @@ func TestFileStorage_LoadSession(t *testing.T) {
 		_, err = fs.LoadSession(invalidPath)
 		assert.Error(t, err)
 		assert.Contains(t, err.Error(), "session has no ID")
+	})
+
+	t.Run("session without CSV path is fatal error", func(t *testing.T) {
+		invalidPath := filepath.Join(tempDir, "no_csv_path.json")
+		invalidSession := map[string]any{
+			"id":   "test-session",
+			"name": "Session Without CSV",
+		}
+		data, _ := json.Marshal(invalidSession)
+		err := os.WriteFile(invalidPath, data, 0644)
+		require.NoError(t, err)
+
+		_, err = fs.LoadSession(invalidPath)
+		assert.Error(t, err)
+		assert.Contains(t, err.Error(), "has no input CSV path")
+		assert.Contains(t, err.Error(), "source of truth")
 	})
 }
 
