@@ -74,24 +74,23 @@ const (
 // Session manages the complete ranking workflow and persistent state
 type Session struct {
 	// Core identity
-	ID        string        `json:"id"`         // Unique session identifier
-	Name      string        `json:"name"`       // Human-readable session name
+	Name      string        `json:"name"`       // Unique session name (used as identifier)
 	Status    SessionStatus `json:"status"`     // Current session state
 	CreatedAt time.Time     `json:"created_at"` // Session creation timestamp
 	UpdatedAt time.Time     `json:"updated_at"` // Last modification timestamp
 
 	// Configuration and data
-	Config         SessionConfig      `json:"config"`                    // Session configuration
-	Proposals      []Proposal         `json:"-"`                         // Collection of proposals (reloaded from CSV, never serialized)
-	ProposalScores map[string]float64 `json:"proposal_scores"`           // Current scores by ID (lightweight persistence)
-	ProposalIndex  map[string]int     `json:"-"`                         // Fast ID lookup (not serialized)
-	InputCSVPath   string             `json:"input_csv_path"`            // Original input CSV file path for export
+	Config         SessionConfig      `json:"config"`          // Session configuration
+	Proposals      []Proposal         `json:"-"`               // Collection of proposals (reloaded from CSV, never serialized)
+	ProposalScores map[string]float64 `json:"proposal_scores"` // Current scores by ID (lightweight persistence)
+	ProposalIndex  map[string]int     `json:"-"`               // Fast ID lookup (not serialized)
+	InputCSVPath   string             `json:"input_csv_path"`  // Original input CSV file path for export
 
 	// Comparison tracking (lightweight persistence for progress/confidence)
-	ComparisonCounts    map[string]int `json:"comparison_counts"`     // Per-proposal comparison count for confidence
-	TotalComparisons    int            `json:"total_comparisons"`     // Total comparisons performed for progress
-	CurrentComparison   *ComparisonState `json:"-"`                   // Active comparison state (not persisted)
-	CompletedComparisons []Comparison    `json:"-"`                   // Historical comparisons (not persisted)
+	ComparisonCounts     map[string]int   `json:"comparison_counts"` // Per-proposal comparison count for confidence
+	TotalComparisons     int              `json:"total_comparisons"` // Total comparisons performed for progress
+	CurrentComparison    *ComparisonState `json:"-"`                 // Active comparison state (not persisted)
+	CompletedComparisons []Comparison     `json:"-"`                 // Historical comparisons (not persisted)
 
 	// Analytics and optimization
 	ConvergenceMetrics *ConvergenceMetrics `json:"convergence_metrics"` // Progress tracking
@@ -115,7 +114,7 @@ type ComparisonState struct {
 // Comparison records a completed evaluation event between proposals
 type Comparison struct {
 	ID          string           `json:"id"`           // Unique comparison identifier
-	SessionID   string           `json:"session_id"`   // Parent session reference
+	SessionName string           `json:"session_name"` // Parent session name
 	ProposalIDs []string         `json:"proposal_ids"` // Proposals that were compared
 	WinnerID    string           `json:"winner_id"`    // Selected best proposal ID (empty if skipped)
 	Rankings    []string         `json:"rankings"`     // Full ranking order for multi-proposal (optional)
@@ -140,7 +139,6 @@ type EloUpdate struct {
 
 // ConvergenceMetrics tracks session progress and convergence indicators
 type ConvergenceMetrics struct {
-	SessionID           string    `json:"session_id"`            // Parent session identifier
 	TotalComparisons    int       `json:"total_comparisons"`     // Number of comparisons performed
 	AvgRatingChange     float64   `json:"avg_rating_change"`     // Rolling average of rating changes
 	RatingVariance      float64   `json:"rating_variance"`       // Variance in recent rating changes
@@ -153,7 +151,6 @@ type ConvergenceMetrics struct {
 
 // MatchupHistory tracks comparison pairings to optimize future matchup selection
 type MatchupHistory struct {
-	SessionID               string    `json:"session_id"`                // Parent session identifier
 	ProposalA               string    `json:"proposal_a"`                // First proposal ID
 	ProposalB               string    `json:"proposal_b"`                // Second proposal ID
 	ComparisonCount         int       `json:"comparison_count"`          // Times this pair has been compared
@@ -164,7 +161,6 @@ type MatchupHistory struct {
 
 // RatingBin groups proposals by rating ranges for strategic matchup selection
 type RatingBin struct {
-	SessionID   string    `json:"session_id"`   // Parent session identifier
 	BinIndex    int       `json:"bin_index"`    // Numeric bin identifier
 	MinRating   float64   `json:"min_rating"`   // Lower bound of rating range
 	MaxRating   float64   `json:"max_rating"`   // Upper bound of rating range
@@ -192,12 +188,6 @@ func NewSession(name string, proposals []Proposal, config SessionConfig, inputCS
 		return nil, fmt.Errorf("invalid session configuration: %w", err)
 	}
 
-	// Generate unique session ID
-	sessionID, err := generateSessionID()
-	if err != nil {
-		return nil, fmt.Errorf("failed to generate session ID: %w", err)
-	}
-
 	now := time.Now()
 
 	// Build proposal index for fast lookups
@@ -208,7 +198,6 @@ func NewSession(name string, proposals []Proposal, config SessionConfig, inputCS
 
 	// Initialize convergence metrics
 	convergenceMetrics := &ConvergenceMetrics{
-		SessionID:           sessionID,
 		TotalComparisons:    0,
 		AvgRatingChange:     0.0,
 		RatingVariance:      0.0,
@@ -220,7 +209,6 @@ func NewSession(name string, proposals []Proposal, config SessionConfig, inputCS
 	}
 
 	session := &Session{
-		ID:                   sessionID,
 		Name:                 name,
 		Status:               StatusCreated,
 		CreatedAt:            now,
@@ -245,33 +233,18 @@ func NewSession(name string, proposals []Proposal, config SessionConfig, inputCS
 	return session, nil
 }
 
-// generateSessionID creates a unique identifier for the session
-func generateSessionID() (string, error) {
-	// Generate timestamp-based prefix for readability
-	timestamp := time.Now().Format("20060102_150405")
-
-	// Add random suffix for uniqueness
-	randomBytes := make([]byte, 4)
-	if _, err := rand.Read(randomBytes); err != nil {
-		return "", err
-	}
-	randomSuffix := hex.EncodeToString(randomBytes)
-
-	return fmt.Sprintf("session_%s_%s", timestamp, randomSuffix), nil
-}
-
 // LoadSession loads an existing session from the storage directory
 // This is a convenience function that uses FileStorage internally
-func LoadSession(sessionID string, storageDir string) (*Session, error) {
-	if sessionID == "" {
-		return nil, fmt.Errorf("%w: session ID is required", ErrRequiredField)
+func LoadSession(sessionName string, storageDir string) (*Session, error) {
+	if sessionName == "" {
+		return nil, fmt.Errorf("%w: session name is required", ErrRequiredField)
 	}
 
-	sessionFile := filepath.Join(storageDir, sessionID+".json")
+	sessionFile := filepath.Join(storageDir, SanitizeFilename(sessionName)+".json")
 
 	// Check if session file exists
 	if _, err := os.Stat(sessionFile); os.IsNotExist(err) {
-		return nil, fmt.Errorf("%w: session %s", ErrSessionNotFound, sessionID)
+		return nil, fmt.Errorf("%w: session %s", ErrSessionNotFound, sessionName)
 	}
 
 	// Use FileStorage to load session properly (handles proposal reloading from CSV)
@@ -295,9 +268,6 @@ func LoadSession(sessionID string, storageDir string) (*Session, error) {
 // validate performs integrity checks on the loaded session
 func (s *Session) validate() error {
 	// Check basic fields
-	if s.ID == "" {
-		return errors.New("session ID is empty")
-	}
 	if s.Name == "" {
 		return errors.New("session name is empty")
 	}
@@ -332,33 +302,10 @@ func (s *Session) Save() error {
 	// Update timestamp
 	s.UpdatedAt = time.Now()
 
-	// Ensure storage directory exists
-	if err := os.MkdirAll(s.storageDirectory, 0755); err != nil {
-		return fmt.Errorf("failed to create storage directory: %w", err)
-	}
-
-	sessionFile := filepath.Join(s.storageDirectory, s.ID+".json")
-	tempFile := sessionFile + ".tmp"
-
-	// Serialize to JSON
-	data, err := json.MarshalIndent(s, "", "  ")
-	if err != nil {
-		return fmt.Errorf("failed to serialize session: %w", err)
-	}
-
-	// Write to temporary file first (atomic operation)
-	if err := os.WriteFile(tempFile, data, 0644); err != nil {
-		return fmt.Errorf("failed to write temporary session file: %w", err)
-	}
-
-	// Atomically replace the original file
-	if err := os.Rename(tempFile, sessionFile); err != nil {
-		// Clean up temp file on failure
-		os.Remove(tempFile)
-		return fmt.Errorf("%w: failed to replace session file", ErrAtomicOperationFailed)
-	}
-
-	return nil
+	// Use FileStorage for consistent saving
+	storage := NewFileStorage(filepath.Join(s.storageDirectory, "backups"))
+	sessionFile := filepath.Join(s.storageDirectory, SanitizeFilename(s.Name)+".json")
+	return storage.SaveSession(s, sessionFile)
 }
 
 // SetStorageDirectory configures where the session should be persisted
@@ -516,7 +463,7 @@ func (s *Session) completeComparisonInternal(winnerID string, rankings []string,
 
 	comparison := &Comparison{
 		ID:          s.CurrentComparison.ID,
-		SessionID:   s.ID,
+		SessionName: s.Name,
 		ProposalIDs: make([]string, len(s.CurrentComparison.ProposalIDs)),
 		WinnerID:    winnerID,
 		Rankings:    rankings,
@@ -603,54 +550,19 @@ func (s *Session) CancelComparison() error {
 	return nil
 }
 
-// PauseSession pauses the ranking session
-func (s *Session) PauseSession() error {
-	s.mutex.Lock()
-	defer s.mutex.Unlock()
-
-	if s.Status != StatusActive {
-		return fmt.Errorf("%w: can only pause active sessions", ErrInvalidSessionState)
-	}
-
-	// Cancel any active comparison
-	s.CurrentComparison = nil
-	s.Status = StatusPaused
-
-	s.UpdatedAt = time.Now()
-
-	// Force save when pausing
-	return s.saveInternal()
-}
-
-// ResumeSession resumes a paused ranking session
-func (s *Session) ResumeSession() error {
-	s.mutex.Lock()
-	defer s.mutex.Unlock()
-
-	if s.Status != StatusPaused {
-		return fmt.Errorf("%w: can only resume paused sessions", ErrInvalidSessionState)
-	}
-
-	s.Status = StatusActive
-
-	s.UpdatedAt = time.Now()
-
-	return nil
-}
-
 // CompleteSession marks the session as complete
 func (s *Session) CompleteSession() error {
 	s.mutex.Lock()
-	defer s.mutex.Unlock()
 
 	// Cancel any active comparison
 	s.CurrentComparison = nil
 	s.Status = StatusComplete
 
 	s.UpdatedAt = time.Now()
+	s.mutex.Unlock()
 
-	// Force save when completing
-	return s.saveInternal()
+	// Force save when completing (outside mutex to avoid deadlock)
+	return s.Save()
 }
 
 // GetCurrentComparison returns the current active comparison (thread-safe copy)
@@ -712,40 +624,6 @@ func generateComparisonID() (string, error) {
 		return "", err
 	}
 	return fmt.Sprintf("comp_%s", hex.EncodeToString(randomBytes)), nil
-}
-
-// saveInternal performs internal save without locking (caller must hold mutex)
-func (s *Session) saveInternal() error {
-	// Update timestamp
-	s.UpdatedAt = time.Now()
-
-	// Ensure storage directory exists
-	if err := os.MkdirAll(s.storageDirectory, 0755); err != nil {
-		return fmt.Errorf("failed to create storage directory: %w", err)
-	}
-
-	sessionFile := filepath.Join(s.storageDirectory, s.ID+".json")
-	tempFile := sessionFile + ".tmp"
-
-	// Serialize to JSON
-	data, err := json.MarshalIndent(s, "", "  ")
-	if err != nil {
-		return fmt.Errorf("failed to serialize session: %w", err)
-	}
-
-	// Write to temporary file first (atomic operation)
-	if err := os.WriteFile(tempFile, data, 0644); err != nil {
-		return fmt.Errorf("failed to write temporary session file: %w", err)
-	}
-
-	// Atomically replace the original file
-	if err := os.Rename(tempFile, sessionFile); err != nil {
-		// Clean up temp file on failure
-		os.Remove(tempFile)
-		return fmt.Errorf("%w: failed to replace session file", ErrAtomicOperationFailed)
-	}
-
-	return nil
 }
 
 // updateConvergenceMetrics recalculates convergence indicators
@@ -881,7 +759,6 @@ func (s *Session) recordMatchupInternal(proposalA, proposalB string, information
 	// Create new matchup history if not found
 	if matchup == nil {
 		s.MatchupHistory = append(s.MatchupHistory, MatchupHistory{
-			SessionID:               s.ID,
 			ProposalA:               proposalA,
 			ProposalB:               proposalB,
 			ComparisonCount:         0,
@@ -925,7 +802,6 @@ func (s *Session) GetMatchupHistory() []MatchupHistory {
 	history := make([]MatchupHistory, len(s.MatchupHistory))
 	for i, matchup := range s.MatchupHistory {
 		history[i] = MatchupHistory{
-			SessionID:       matchup.SessionID,
 			ProposalA:       matchup.ProposalA,
 			ProposalB:       matchup.ProposalB,
 			ComparisonCount: matchup.ComparisonCount,
@@ -1006,7 +882,7 @@ func generateUpdateID() (string, error) {
 	return fmt.Sprintf("upd_%s", hex.EncodeToString(randomBytes)), nil
 }
 
-// ListSessions returns all available session IDs in the storage directory
+// ListSessions returns all available session names in the storage directory
 func ListSessions(storageDir string) ([]string, error) {
 	if _, err := os.Stat(storageDir); os.IsNotExist(err) {
 		return make([]string, 0), nil
@@ -1020,90 +896,17 @@ func ListSessions(storageDir string) ([]string, error) {
 	sessions := make([]string, 0)
 	for _, entry := range entries {
 		if !entry.IsDir() && filepath.Ext(entry.Name()) == ".json" {
-			sessionID := strings.TrimSuffix(entry.Name(), ".json")
-			sessions = append(sessions, sessionID)
+			sessionName := strings.TrimSuffix(entry.Name(), ".json")
+			sessions = append(sessions, sessionName)
 		}
 	}
 
 	return sessions, nil
 }
 
-// BackupSession creates a backup copy of the session file
-func (s *Session) BackupSession() error {
-	s.mutex.RLock()
-	defer s.mutex.RUnlock()
-
-	sessionFile := filepath.Join(s.storageDirectory, s.ID+".json")
-	backupFile := filepath.Join(s.storageDirectory, fmt.Sprintf("%s_backup_%d.json", s.ID, time.Now().Unix()))
-
-	// Check if original file exists
-	if _, err := os.Stat(sessionFile); os.IsNotExist(err) {
-		return fmt.Errorf("session file not found: %s", sessionFile)
-	}
-
-	// Read original file
-	data, err := os.ReadFile(sessionFile)
-	if err != nil {
-		return fmt.Errorf("failed to read session file for backup: %w", err)
-	}
-
-	// Write backup file
-	if err := os.WriteFile(backupFile, data, 0644); err != nil {
-		return fmt.Errorf("failed to create backup file: %w", err)
-	}
-
-	return nil
-}
-
-// RecoverFromBackup attempts to recover a session from its most recent backup
-func RecoverFromBackup(sessionID, storageDir string) (*Session, error) {
-	// Find backup files for this session
-	pattern := filepath.Join(storageDir, sessionID+"_backup_*.json")
-	backups, err := filepath.Glob(pattern)
-	if err != nil {
-		return nil, fmt.Errorf("failed to search for backup files: %w", err)
-	}
-
-	if len(backups) == 0 {
-		return nil, fmt.Errorf("no backup files found for session: %s", sessionID)
-	}
-
-	// Sort backups to get the most recent
-	sort.Strings(backups)
-	mostRecentBackup := backups[len(backups)-1]
-
-	// Try to load from backup
-	data, err := os.ReadFile(mostRecentBackup)
-	if err != nil {
-		return nil, fmt.Errorf("failed to read backup file: %w", err)
-	}
-
-	// Parse JSON
-	var session Session
-	if err := json.Unmarshal(data, &session); err != nil {
-		return nil, fmt.Errorf("backup file is also corrupted: %w", err)
-	}
-
-	// Rebuild proposal index
-	session.ProposalIndex = make(map[string]int, len(session.Proposals))
-	for i, proposal := range session.Proposals {
-		session.ProposalIndex[proposal.ID] = i
-	}
-
-	// Set storage directory
-	session.storageDirectory = storageDir
-
-	// Validate recovered session
-	if err := session.validate(); err != nil {
-		return nil, fmt.Errorf("recovered session is invalid: %w", err)
-	}
-
-	return &session, nil
-}
-
 // ValidateSessionFile checks if a session file is valid without fully loading it
-func ValidateSessionFile(sessionID, storageDir string) error {
-	sessionFile := filepath.Join(storageDir, sessionID+".json")
+func ValidateSessionFile(sessionName, storageDir string) error {
+	sessionFile := filepath.Join(storageDir, SanitizeFilename(sessionName)+".json")
 
 	// Check if file exists
 	if _, err := os.Stat(sessionFile); os.IsNotExist(err) {
@@ -1123,7 +926,7 @@ func ValidateSessionFile(sessionID, storageDir string) error {
 	}
 
 	// Check required fields
-	requiredFields := []string{"id", "name", "status", "created_at", "proposals", "config"}
+	requiredFields := []string{"name", "status", "created_at", "config"}
 	for _, field := range requiredFields {
 		if _, exists := rawSession[field]; !exists {
 			return fmt.Errorf("%w: missing required field: %s", ErrSessionCorrupted, field)
@@ -1133,46 +936,14 @@ func ValidateSessionFile(sessionID, storageDir string) error {
 	return nil
 }
 
-// CleanupBackups removes old backup files, keeping only the most recent N backups
-func CleanupBackups(sessionID, storageDir string, keepCount int) error {
-	if keepCount <= 0 {
-		return fmt.Errorf("keep count must be positive")
-	}
-
-	// Find backup files for this session
-	pattern := filepath.Join(storageDir, sessionID+"_backup_*.json")
-	backups, err := filepath.Glob(pattern)
-	if err != nil {
-		return fmt.Errorf("failed to search for backup files: %w", err)
-	}
-
-	if len(backups) <= keepCount {
-		return nil // Nothing to clean up
-	}
-
-	// Sort backups by name (which includes timestamp)
-	sort.Strings(backups)
-
-	// Remove oldest backups
-	toRemove := backups[:len(backups)-keepCount]
-	for _, backup := range toRemove {
-		if err := os.Remove(backup); err != nil {
-			// Log warning but continue cleanup
-			// TODO: Add proper logging
-		}
-	}
-
-	return nil
-}
-
 // GetSessionInfo returns basic session information without loading the full session
-func GetSessionInfo(sessionID, storageDir string) (*SessionInfo, error) {
-	sessionFile := filepath.Join(storageDir, sessionID+".json")
+func GetSessionInfo(sessionName, storageDir string) (*SessionInfo, error) {
+	sessionFile := filepath.Join(storageDir, SanitizeFilename(sessionName)+".json")
 
 	// Check if file exists
 	stat, err := os.Stat(sessionFile)
 	if os.IsNotExist(err) {
-		return nil, fmt.Errorf("%w: session %s", ErrSessionNotFound, sessionID)
+		return nil, fmt.Errorf("%w: session %s", ErrSessionNotFound, sessionName)
 	}
 	if err != nil {
 		return nil, fmt.Errorf("failed to stat session file: %w", err)
@@ -1186,7 +957,6 @@ func GetSessionInfo(sessionID, storageDir string) (*SessionInfo, error) {
 
 	// Parse just the fields we need
 	var partial struct {
-		ID                   string     `json:"id"`
 		Name                 string     `json:"name"`
 		Status               string     `json:"status"`
 		CreatedAt            time.Time  `json:"created_at"`
@@ -1200,7 +970,6 @@ func GetSessionInfo(sessionID, storageDir string) (*SessionInfo, error) {
 	}
 
 	return &SessionInfo{
-		ID:              partial.ID,
 		Name:            partial.Name,
 		Status:          SessionStatus(partial.Status),
 		CreatedAt:       partial.CreatedAt,
@@ -1214,7 +983,6 @@ func GetSessionInfo(sessionID, storageDir string) (*SessionInfo, error) {
 
 // SessionInfo provides summary information about a session
 type SessionInfo struct {
-	ID              string        `json:"id"`
 	Name            string        `json:"name"`
 	Status          SessionStatus `json:"status"`
 	CreatedAt       time.Time     `json:"created_at"`
@@ -1226,19 +994,19 @@ type SessionInfo struct {
 }
 
 // DeleteSession removes a session and all its backups from storage
-func DeleteSession(sessionID, storageDir string) error {
-	if sessionID == "" {
-		return fmt.Errorf("session ID is required")
+func DeleteSession(sessionName, storageDir string) error {
+	if sessionName == "" {
+		return fmt.Errorf("session name is required")
 	}
 
 	// Remove main session file
-	sessionFile := filepath.Join(storageDir, sessionID+".json")
+	sessionFile := filepath.Join(storageDir, SanitizeFilename(sessionName)+".json")
 	if err := os.Remove(sessionFile); err != nil && !os.IsNotExist(err) {
 		return fmt.Errorf("failed to remove session file: %w", err)
 	}
 
 	// Remove backup files
-	pattern := filepath.Join(storageDir, sessionID+"_backup_*.json")
+	pattern := filepath.Join(storageDir, SanitizeFilename(sessionName)+"_backup_*.json")
 	backups, err := filepath.Glob(pattern)
 	if err != nil {
 		return fmt.Errorf("failed to search for backup files: %w", err)
@@ -1772,10 +1540,10 @@ func (sd *SessionDetector) FindSessionFile(sessionName string) (string, error) {
 
 	// Sanitize session name for filesystem
 	safeName := SanitizeFilename(sessionName)
-	
+
 	// Construct direct filename
 	sessionFile := filepath.Join(sd.sessionsDir, safeName+".json")
-	
+
 	// Check if file exists
 	if _, err := os.Stat(sessionFile); err != nil {
 		if os.IsNotExist(err) {
@@ -1853,15 +1621,15 @@ func SanitizeFilename(name string) string {
 	for _, char := range invalidChars {
 		result = strings.ReplaceAll(result, string(char), "_")
 	}
-	
+
 	// Replace spaces with underscores for cleaner filenames
 	result = strings.ReplaceAll(result, " ", "_")
-	
+
 	// Ensure it's not empty after sanitization
 	if result == "" {
 		result = "session"
 	}
-	
+
 	return result
 }
 

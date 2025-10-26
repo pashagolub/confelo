@@ -646,8 +646,8 @@ func (fs *FileStorage) loadSessionFromFile(filename string) (*Session, error) {
 	}
 
 	// Basic validation to ensure session is valid
-	if session.ID == "" {
-		return nil, fmt.Errorf("%w: session has no ID", ErrCorruptedFile)
+	if session.Name == "" {
+		return nil, fmt.Errorf("%w: session has no name", ErrCorruptedFile)
 	}
 
 	// Validate that InputCSVPath is set - required for proposal reloading
@@ -682,7 +682,6 @@ func (fs *FileStorage) loadSessionFromFile(filename string) (*Session, error) {
 	if session.ConvergenceMetrics == nil {
 		// Create new metrics if none exist (old session format)
 		session.ConvergenceMetrics = &ConvergenceMetrics{
-			SessionID:           session.ID,
 			TotalComparisons:    session.TotalComparisons,
 			AvgRatingChange:     0.0,
 			RatingVariance:      0.0,

@@ -105,8 +105,7 @@ func BenchmarkMemoryUsage(b *testing.B) {
 
 			// Create session to simulate full application state
 			s := &Session{
-				ID:        fmt.Sprintf("memory_test_%d", i),
-				Name:      "Memory Test Session",
+				Name:      fmt.Sprintf("memory_test_%d", i),
 				Status:    "active",
 				CreatedAt: time.Now(),
 				UpdatedAt: time.Now(),
@@ -160,8 +159,7 @@ func BenchmarkSessionOperations(b *testing.B) {
 		}
 
 		session := &Session{
-			ID:        "benchmark_session",
-			Name:      "Benchmark Session",
+			Name:      "benchmark_session",
 			Status:    "active",
 			CreatedAt: time.Now(),
 			UpdatedAt: time.Now(),
@@ -252,8 +250,7 @@ func TestConstitutionalRequirements(t *testing.T) {
 		nestedStorage := NewFileStorage(nestedDir) // Should create nested directories
 
 		session := &Session{
-			ID:        "cross_platform_session",
-			Name:      "Cross Platform Test",
+			Name:      "cross_platform_session",
 			Status:    "active",
 			CreatedAt: time.Now(),
 			UpdatedAt: time.Now(),

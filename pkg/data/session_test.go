@@ -137,11 +137,8 @@ func TestNewSession(t *testing.T) {
 		assert.Equal(t, "Test Session", session.Name)
 		assert.Equal(t, StatusCreated, session.Status)
 		assert.Equal(t, len(proposals), len(session.Proposals))
-		assert.NotEmpty(t, session.ID)
 		assert.NotNil(t, session.ConvergenceMetrics)
-		assert.Len(t, session.ProposalIndex, len(proposals))
-
-		// Verify proposal index is correct
+		assert.Len(t, session.ProposalIndex, len(proposals)) // Verify proposal index is correct
 		for i, proposal := range proposals {
 			assert.Equal(t, i, session.ProposalIndex[proposal.ID])
 		}
@@ -181,11 +178,10 @@ func TestSessionSaveAndLoad(t *testing.T) {
 	require.NoError(t, err)
 
 	// Load session
-	loadedSession, err := LoadSession(originalSession.ID, tempDir)
+	loadedSession, err := LoadSession(originalSession.Name, tempDir)
 	require.NoError(t, err)
 
 	// Verify loaded session matches original
-	assert.Equal(t, originalSession.ID, loadedSession.ID)
 	assert.Equal(t, originalSession.Name, loadedSession.Name)
 	assert.Equal(t, originalSession.Status, loadedSession.Status)
 	assert.Equal(t, len(originalSession.Proposals), len(loadedSession.Proposals))
@@ -217,43 +213,6 @@ func TestSessionPersistenceErrorHandling(t *testing.T) {
 		assert.Error(t, err)
 		assert.Contains(t, err.Error(), "corrupted")
 	})
-}
-
-// Test Session Lifecycle
-func TestSessionLifecycle(t *testing.T) {
-	tempDir := createTempDir(t)
-	defer cleanupTempDir(t, tempDir)
-
-	proposals := createTestProposals()
-	config := createTestConfig()
-
-	session, err := NewSession("Test Session", proposals, config, "test.csv")
-	require.NoError(t, err)
-	session.SetStorageDirectory(tempDir)
-
-	// Test status transitions
-	assert.Equal(t, StatusCreated, session.GetStatus())
-
-	// Start comparison to become active
-	err = session.StartComparison([]string{"prop1", "prop2"}, MethodPairwise)
-	require.NoError(t, err)
-	assert.Equal(t, StatusActive, session.GetStatus())
-
-	// Pause session
-	err = session.PauseSession()
-	require.NoError(t, err)
-	assert.Equal(t, StatusPaused, session.GetStatus())
-	assert.Nil(t, session.GetCurrentComparison()) // Should cancel active comparison
-
-	// Resume session
-	err = session.ResumeSession()
-	require.NoError(t, err)
-	assert.Equal(t, StatusActive, session.GetStatus())
-
-	// Complete session
-	err = session.CompleteSession()
-	require.NoError(t, err)
-	assert.Equal(t, StatusComplete, session.GetStatus())
 }
 
 // Test Comparison Management
@@ -538,35 +497,48 @@ func TestBackupAndRecovery(t *testing.T) {
 	proposals := createTestProposals()
 	config := createTestConfig()
 
+	// Create test CSV file
+	csvPath := filepath.Join(tempDir, "test.csv")
+	csvContent := "id,title,speaker\n"
+	for _, p := range proposals {
+		csvContent += fmt.Sprintf("%s,%s,%s\n", p.ID, p.Title, p.Speaker)
+	}
+	err := os.WriteFile(csvPath, []byte(csvContent), 0644)
+	require.NoError(t, err)
+
 	// Create and save session
-	session, err := NewSession("Test Session", proposals, config, "test.csv")
+	session, err := NewSession("Test Session", proposals, config, csvPath)
 	require.NoError(t, err)
 	session.SetStorageDirectory(tempDir)
 
 	err = session.Save()
 	require.NoError(t, err)
 
-	// Create backup
-	err = session.BackupSession()
+	sessionFile := filepath.Join(tempDir, SanitizeFilename(session.Name)+".json")
+
+	// Create backup using FileStorage
+	storage := NewFileStorage(filepath.Join(tempDir, "backups"))
+	backupPath, err := storage.CreateBackup(sessionFile)
 	require.NoError(t, err)
+	assert.NotEmpty(t, backupPath)
 
 	// Verify backup file exists
-	backupPattern := filepath.Join(tempDir, session.ID+"_backup_*.json")
-	backups, err := filepath.Glob(backupPattern)
+	_, err = os.Stat(backupPath)
 	require.NoError(t, err)
-	assert.Len(t, backups, 1)
 
 	// Corrupt the main session file
-	sessionFile := filepath.Join(tempDir, session.ID+".json")
 	err = os.WriteFile(sessionFile, []byte("{corrupted"), 0644)
 	require.NoError(t, err)
 
-	// Recover from backup
-	recoveredSession, err := RecoverFromBackup(session.ID, tempDir)
+	// Recover from backup using FileStorage
+	err = storage.RecoverFromBackup(sessionFile)
+	require.NoError(t, err)
+
+	// Verify recovery by loading session
+	recoveredSession, err := LoadSession(session.Name, tempDir)
 	require.NoError(t, err)
 
 	// Verify recovered session
-	assert.Equal(t, session.ID, recoveredSession.ID)
 	assert.Equal(t, session.Name, recoveredSession.Name)
 	assert.Equal(t, len(session.Proposals), len(recoveredSession.Proposals))
 }
@@ -596,14 +568,13 @@ func TestSessionManagementUtils(t *testing.T) {
 		sessions, err := ListSessions(tempDir)
 		require.NoError(t, err)
 		assert.Len(t, sessions, 2)
-		assert.Contains(t, sessions, session1.ID)
-		assert.Contains(t, sessions, session2.ID)
+		assert.Contains(t, sessions, SanitizeFilename(session1.Name))
+		assert.Contains(t, sessions, SanitizeFilename(session2.Name))
 	})
 
 	t.Run("Get session info", func(t *testing.T) {
-		info, err := GetSessionInfo(session1.ID, tempDir)
+		info, err := GetSessionInfo(session1.Name, tempDir)
 		require.NoError(t, err)
-		assert.Equal(t, session1.ID, info.ID)
 		assert.Equal(t, session1.Name, info.Name)
 		assert.Equal(t, StatusCreated, info.Status)
 		assert.Equal(t, len(proposals), info.ProposalCount)
@@ -611,7 +582,7 @@ func TestSessionManagementUtils(t *testing.T) {
 	})
 
 	t.Run("Validate session file", func(t *testing.T) {
-		err := ValidateSessionFile(session1.ID, tempDir)
+		err := ValidateSessionFile(session1.Name, tempDir)
 		assert.NoError(t, err)
 
 		err = ValidateSessionFile("nonexistent", tempDir)
@@ -619,17 +590,17 @@ func TestSessionManagementUtils(t *testing.T) {
 	})
 
 	t.Run("Delete session", func(t *testing.T) {
-		err := DeleteSession(session2.ID, tempDir)
+		err := DeleteSession(session2.Name, tempDir)
 		require.NoError(t, err)
 
 		// Verify session is gone
-		_, err = LoadSession(session2.ID, tempDir)
+		_, err = LoadSession(session2.Name, tempDir)
 		assert.Error(t, err)
 
 		sessions, err := ListSessions(tempDir)
 		require.NoError(t, err)
 		assert.Len(t, sessions, 1)
-		assert.NotContains(t, sessions, session2.ID)
+		assert.NotContains(t, sessions, SanitizeFilename(session2.Name))
 	})
 }
 

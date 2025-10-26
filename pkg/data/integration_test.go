@@ -508,7 +508,6 @@ func TestQuickstartScenarios(t *testing.T) {
 
 		// Create session (simulating what main.go does)
 		session := &Session{
-			ID:        fmt.Sprintf("session_%s_%d_test", sessionName, time.Now().Unix()),
 			Name:      sessionName,
 			Status:    StatusActive,
 			CreatedAt: time.Now(),
@@ -520,11 +519,9 @@ func TestQuickstartScenarios(t *testing.T) {
 		err = os.MkdirAll(sessionsDir, 0755)
 		require.NoError(t, err)
 
-		sessionFile := filepath.Join(sessionsDir, session.ID+".json")
+		sessionFile := filepath.Join(sessionsDir, SanitizeFilename(session.Name)+".json")
 		err = storage.SaveSession(session, sessionFile)
-		require.NoError(t, err, "Session save should succeed")
-
-		// Validate session file was created
+		require.NoError(t, err, "Session save should succeed") // Validate session file was created
 		assert.FileExists(t, sessionFile, "Session file should exist")
 
 		// Validate session file content
@@ -574,7 +571,6 @@ func TestQuickstartScenarios(t *testing.T) {
 		session, err := storage.LoadSession(sessionFile)
 		require.NoError(t, err, "Session loading should succeed")
 		assert.Equal(t, sessionName, session.Name)
-		assert.NotEmpty(t, session.ID)
 
 		// Test config creation (can override settings on resume)
 		config, err := CreateSessionConfigFromCLI(opts)
@@ -787,7 +783,7 @@ func TestQuickstartScenarios(t *testing.T) {
 func TestCompleteWorkflowNoJSONLIntegration(t *testing.T) {
 	t.Run("Complete_ranking_workflow_produces_no_jsonl_files", func(t *testing.T) {
 		tempDir := t.TempDir()
-		
+
 		// Create test CSV file
 		csvContent := "id,title,speaker,score\n1,Test Proposal 1,Speaker A,0\n2,Test Proposal 2,Speaker B,0\n3,Test Proposal 3,Speaker C,0\n4,Test Proposal 4,Speaker D,0\n"
 		csvFile := filepath.Join(tempDir, "test-proposals.csv")
@@ -808,26 +804,26 @@ func TestCompleteWorkflowNoJSONLIntegration(t *testing.T) {
 
 		// Perform complete ranking workflow
 		t.Log("Starting complete ranking workflow...")
-		
+
 		// Do multiple comparisons to simulate real usage
 		comparisons := [][]string{
 			{"1", "2"},
-			{"2", "3"}, 
+			{"2", "3"},
 			{"3", "4"},
 			{"1", "3"},
 			{"2", "4"},
 		}
-		
+
 		for _, compPair := range comparisons {
 			err = session.StartComparison(compPair, MethodPairwise)
 			require.NoError(t, err)
-			
+
 			// Simulate user picking winner (alternate winners)
 			winner := compPair[0]
 			if len(session.CompletedComparisons)%2 == 1 {
 				winner = compPair[1]
 			}
-			
+
 			_, err = session.CompleteComparison(winner, compPair, false, "")
 			require.NoError(t, err)
 		}
@@ -852,7 +848,7 @@ func TestCompleteWorkflowNoJSONLIntegration(t *testing.T) {
 		assert.Empty(t, matches, "CRITICAL: Complete workflow should not generate any .jsonl audit files after journal removal")
 
 		// Verify only expected files exist
-		sessionFile := filepath.Join(tempDir, session.ID+".json")
+		sessionFile := filepath.Join(tempDir, SanitizeFilename(session.Name)+".json")
 		_, err = os.Stat(sessionFile)
 		assert.NoError(t, err, "Session JSON file should exist")
 
@@ -860,15 +856,12 @@ func TestCompleteWorkflowNoJSONLIntegration(t *testing.T) {
 		assert.NoError(t, err, "Updated CSV file should exist")
 
 		// Verify that session can be loaded back without audit dependencies
-		loadedSession, err := LoadSession(session.ID, tempDir)
+		loadedSession, err := LoadSession(session.Name, tempDir)
 		require.NoError(t, err)
-		assert.Equal(t, session.ID, loadedSession.ID)
 		assert.Equal(t, session.Name, loadedSession.Name)
-		assert.Len(t, loadedSession.CompletedComparisons, 0) // Comparisons are not persisted
-		
-		// CONTRACT: Loaded session should not have audit trail after journal removal
+		assert.Len(t, loadedSession.CompletedComparisons, 0) // Comparisons are not persisted		// CONTRACT: Loaded session should not have audit trail after journal removal
 		// Note: auditTrail field was successfully removed, so this contract is fulfilled
-		
+
 		t.Log("Integration test completed successfully")
 	})
 }

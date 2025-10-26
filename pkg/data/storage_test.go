@@ -232,8 +232,7 @@ PROP001,Test Proposal,Test Speaker`
 	require.NoError(t, err)
 
 	session := &Session{
-		ID:           "test-session",
-		Name:         "Test Session",
+		Name:         "test-session",
 		InputCSVPath: csvPath, // CSV path is required
 		CreatedAt:    time.Now(),
 		UpdatedAt:    time.Now(),
@@ -262,7 +261,6 @@ PROP001,Test Proposal,Test Speaker`
 		err = json.Unmarshal(content, &loadedSession)
 		require.NoError(t, err)
 
-		assert.Equal(t, session.ID, loadedSession.ID)
 		assert.Equal(t, session.Name, loadedSession.Name)
 		// Proposals are not serialized anymore - they're reloaded from CSV
 		// Instead, ProposalScores are saved
@@ -301,8 +299,7 @@ PROP001,Test Proposal,Test Speaker`
 	require.NoError(t, err)
 
 	session := &Session{
-		ID:           "test-session",
-		Name:         "Test Session",
+		Name:         "test-session",
 		InputCSVPath: csvPath, // CSV path is required
 		CreatedAt:    time.Now(),
 		UpdatedAt:    time.Now(),
@@ -327,7 +324,6 @@ PROP001,Test Proposal,Test Speaker`
 			}
 		}()
 
-		assert.Equal(t, session.ID, loadedSession.ID)
 		assert.Equal(t, session.Name, loadedSession.Name)
 		assert.Equal(t, csvPath, loadedSession.InputCSVPath)
 	})
@@ -451,8 +447,7 @@ func TestFileStorage_ConcurrentOperations(t *testing.T) {
 	fs := NewFileStorage(filepath.Join(tempDir, "backups"))
 
 	session := &Session{
-		ID:   "concurrent-test",
-		Name: "Concurrent Session",
+		Name: "concurrent-test",
 	}
 
 	t.Run("concurrent saves", func(t *testing.T) {
@@ -464,8 +459,7 @@ func TestFileStorage_ConcurrentOperations(t *testing.T) {
 			go func(id int) {
 				// Create a new session instead of copying to avoid lock value copy
 				testSession := &Session{
-					ID:                   fmt.Sprintf("session-%d", id),
-					Name:                 session.Name,
+					Name:                 fmt.Sprintf("session-%d", id),
 					Status:               session.Status,
 					CreatedAt:            session.CreatedAt,
 					UpdatedAt:            time.Now(),

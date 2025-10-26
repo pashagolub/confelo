@@ -321,7 +321,7 @@ func executeResumeMode(options *data.CLIOptions, verbose bool) error {
 	}
 
 	if verbose {
-		fmt.Printf("Loaded session: %s (%s)\n", session.Name, session.ID)
+		fmt.Printf("Loaded session: %s\n", session.Name)
 		fmt.Printf("Session config: comparison=%s, rating=%.1f\n", config.UI.ComparisonMode, config.Elo.InitialRating)
 	}
 

@@ -523,8 +523,7 @@ func (a *App) LoadCsvAndStartSession(csvPath string, config data.SessionConfig) 
 
 	// Create new session with loaded proposals
 	session := &data.Session{
-		ID:           fmt.Sprintf("session_%d", time.Now().Unix()),
-		Name:         fmt.Sprintf("Session %s", time.Now().Format("2006-01-02 15:04")),
+		Name:         fmt.Sprintf("Session_%s", time.Now().Format("20060102_150405")),
 		Status:       "active",
 		CreatedAt:    time.Now(),
 		UpdatedAt:    time.Now(),

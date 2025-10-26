@@ -622,7 +622,7 @@ func (cs *ComparisonScreen) executeMultiWayComparison() error {
 	// Record the comparison
 	comparison := data.Comparison{
 		ID:          cs.generateComparisonID(),
-		SessionID:   session.ID,
+		SessionName: session.Name,
 		ProposalIDs: cs.getProposalIDs(),
 		WinnerID:    cs.rankings[0], // First in ranking is winner
 		Rankings:    cs.rankings,
@@ -775,7 +775,7 @@ func (cs *ComparisonScreen) executeComparison() error {
 	// Record completed comparison
 	comparison := data.Comparison{
 		ID:          cs.generateComparisonID(),
-		SessionID:   session.ID,
+		SessionName: session.Name,
 		ProposalIDs: cs.getProposalIDs(),
 		WinnerID:    cs.selectedWinner,
 		Rankings:    cs.rankings,
@@ -821,8 +821,7 @@ func (cs *ComparisonScreen) getSession() *data.Session {
 
 	// Fallback: return a dummy session for testing
 	return &data.Session{
-		ID:   "test",
-		Name: "Test Session",
+		Name: "test",
 		Proposals: []data.Proposal{
 			{
 				ID:      "prop1",

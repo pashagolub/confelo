@@ -37,8 +37,7 @@ func (m *MockApp) NavigateTo(screen int) error {
 // Test data setup
 func createTestSession() *data.Session {
 	return &data.Session{
-		ID:   "test-session",
-		Name: "Test Conference Session",
+		Name: "test-session",
 		Proposals: []data.Proposal{
 			{
 				ID:       "prop1",
@@ -129,7 +128,7 @@ func TestComparisonScreen_OnEnterWithoutSession(t *testing.T) {
 func TestComparisonScreen_OnEnterInsufficientProposals(t *testing.T) {
 	screen := NewComparisonScreen()
 	session := &data.Session{
-		ID:        "test",
+		Name:      "test",
 		Proposals: []data.Proposal{{ID: "single", Title: "Only One", Score: 1500}},
 	}
 	mockApp := &MockApp{session: session}
@@ -173,7 +172,7 @@ func TestComparisonScreen_SetComparisonMode(t *testing.T) {
 func TestComparisonScreen_SetComparisonModeInsufficientProposals(t *testing.T) {
 	screen := NewComparisonScreen()
 	session := &data.Session{
-		ID: "test",
+		Name: "test",
 		Proposals: []data.Proposal{
 			{ID: "prop1", Title: "First", Score: 1500},
 			{ID: "prop2", Title: "Second", Score: 1500},
