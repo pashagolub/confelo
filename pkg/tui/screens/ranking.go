@@ -124,8 +124,9 @@ func (rs *RankingScreen) setupUI() {
 	// Configure main ranking table
 	rs.rankingTable.SetBorder(true).
 		SetTitle(" Rankings ").
-		SetTitleAlign(tview.AlignLeft)
+		SetTitleAlign(tview.AlignCenter)
 	rs.rankingTable.SetSelectable(true, false)
+	rs.rankingTable.SetFixed(1, 1).SetEvaluateAllRows(true)
 
 	// Setup table headers
 	rs.setupTableHeaders()
@@ -145,16 +146,13 @@ func (rs *RankingScreen) setupUI() {
 
 // setupTableHeaders configures the ranking table headers
 func (rs *RankingScreen) setupTableHeaders() {
-	headers := []string{"Rank", "Score", "Export", "Confidence", "Title", "Speaker"}
+	headers := []string{"Rank", "Elo", "Score", "Confidence", "Title", "Speaker"}
 	for col, header := range headers {
 		cell := tview.NewTableCell(header).
 			SetTextColor(tcell.ColorYellow).
 			SetAlign(tview.AlignCenter).
-			SetSelectable(false).
-			SetExpansion(1)
-		if col == 4 { // Title column gets more space
-			cell.SetExpansion(4)
-		}
+			SetSelectable(false)
+
 		rs.rankingTable.SetCell(0, col, cell)
 	}
 }
@@ -303,7 +301,7 @@ func (rs *RankingScreen) calculateExportScore(eloScore float64) float64 {
 	// Get config for output scale settings
 	var outputMin, outputMax float64
 	var useDecimals bool
-	
+
 	if appInterface, ok := rs.app.(interface{ GetConfig() *data.SessionConfig }); ok {
 		config := appInterface.GetConfig()
 		if config != nil {
@@ -326,7 +324,7 @@ func (rs *RankingScreen) calculateExportScore(eloScore float64) float64 {
 
 	minElo := rs.proposals[0].Score
 	maxElo := rs.proposals[0].Score
-	
+
 	for _, proposal := range rs.proposals {
 		if proposal.Score < minElo {
 			minElo = proposal.Score
@@ -349,7 +347,7 @@ func (rs *RankingScreen) calculateExportScore(eloScore float64) float64 {
 	// Linear scaling from actual [minElo, maxElo] to [outputMin, outputMax]
 	eloRange := maxElo - minElo
 	outputRange := outputMax - outputMin
-	
+
 	// Clamp to actual range
 	clampedScore := eloScore
 	if clampedScore < minElo {
@@ -358,7 +356,7 @@ func (rs *RankingScreen) calculateExportScore(eloScore float64) float64 {
 	if clampedScore > maxElo {
 		clampedScore = maxElo
 	}
-	
+
 	normalized := (clampedScore - minElo) / eloRange
 	exportScore := outputMin + (normalized * outputRange)
 
@@ -452,9 +450,8 @@ func (rs *RankingScreen) updateDisplay() {
 // addProposalRow adds a single proposal row to the table
 func (rs *RankingScreen) addProposalRow(row int, proposal data.Proposal) {
 	// Rank (1-based)
-	rank := row
 	rs.rankingTable.SetCell(row, 0,
-		tview.NewTableCell(strconv.Itoa(rank)).
+		tview.NewTableCell(strconv.Itoa(row)).
 			SetAlign(tview.AlignCenter).
 			SetTextColor(tcell.ColorWhite))
 
@@ -484,23 +481,14 @@ func (rs *RankingScreen) addProposalRow(row int, proposal data.Proposal) {
 			SetTextColor(confidenceColor))
 
 	// Title (truncated if too long)
-	title := proposal.Title
-	if len(title) > 60 {
-		title = title[:57] + "..."
-	}
 	rs.rankingTable.SetCell(row, 4,
-		tview.NewTableCell(title).
+		tview.NewTableCell(proposal.Title).
 			SetAlign(tview.AlignLeft).
-			SetTextColor(tcell.ColorWhite).
-			SetExpansion(4))
+			SetTextColor(tcell.ColorWhite))
 
 	// Speaker
-	speaker := proposal.Speaker
-	if len(speaker) > 20 {
-		speaker = speaker[:17] + "..."
-	}
 	rs.rankingTable.SetCell(row, 5,
-		tview.NewTableCell(speaker).
+		tview.NewTableCell(proposal.Speaker).
 			SetAlign(tview.AlignLeft).
 			SetTextColor(tcell.ColorLightBlue))
 }
