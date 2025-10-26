@@ -18,6 +18,7 @@
 go.work
 
 # IDE-specific files
+.specify/
 .vscode/
 .idea/
 *.swp
