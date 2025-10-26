@@ -13,31 +13,9 @@ import (
 )
 
 func TestFileStorage_NewFileStorage(t *testing.T) {
-	tests := []struct {
-		name      string
-		backupDir string
-		want      string
-	}{
-		{
-			name:      "default backup directory",
-			backupDir: "",
-			want:      "backups",
-		},
-		{
-			name:      "custom backup directory",
-			backupDir: "custom/backup",
-			want:      "custom/backup",
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			fs := NewFileStorage(tt.backupDir)
-			assert.Equal(t, tt.want, fs.backupDir)
-			assert.Equal(t, 5, fs.maxBackups)
-			assert.True(t, fs.atomicWrites)
-		})
-	}
+	fs := NewFileStorage()
+	assert.NotNil(t, fs)
+	assert.True(t, fs.atomicWrites)
 }
 
 func TestFileStorage_LoadProposalsFromCSV(t *testing.T) {
@@ -164,7 +142,7 @@ PROP002;"Microservices";"John Smith"`,
 			err := os.WriteFile(csvPath, []byte(tt.csvContent), 0644)
 			require.NoError(t, err)
 
-			fs := NewFileStorage(filepath.Join(tempDir, "backups"))
+			fs := NewFileStorage()
 			result, err := fs.LoadProposalsFromCSV(csvPath, tt.config)
 
 			require.NoError(t, err)
@@ -187,7 +165,7 @@ PROP002;"Microservices";"John Smith"`,
 
 func TestFileStorage_LoadProposalsFromCSV_Errors(t *testing.T) {
 	tempDir := t.TempDir()
-	fs := NewFileStorage(filepath.Join(tempDir, "backups"))
+	fs := NewFileStorage()
 
 	t.Run("file not found", func(t *testing.T) {
 		_, err := fs.LoadProposalsFromCSV("nonexistent.csv", DefaultCSVConfig())
@@ -222,7 +200,7 @@ PROP001,"Test Speaker"`
 
 func TestFileStorage_SaveSession(t *testing.T) {
 	tempDir := t.TempDir()
-	fs := NewFileStorage(filepath.Join(tempDir, "backups"))
+	fs := NewFileStorage()
 
 	// Create a test CSV file (CSV is source of truth)
 	csvPath := filepath.Join(tempDir, "test_proposals.csv")
@@ -289,7 +267,7 @@ PROP001,Test Proposal,Test Speaker`
 
 func TestFileStorage_LoadSession(t *testing.T) {
 	tempDir := t.TempDir()
-	fs := NewFileStorage(filepath.Join(tempDir, "backups"))
+	fs := NewFileStorage()
 
 	// Create a test CSV file (CSV is source of truth)
 	csvPath := filepath.Join(tempDir, "test_proposals.csv")
@@ -375,76 +353,9 @@ PROP001,Test Proposal,Test Speaker`
 	})
 }
 
-func TestFileStorage_BackupOperations(t *testing.T) {
-	tempDir := t.TempDir()
-	fs := NewFileStorage(filepath.Join(tempDir, "backups"))
-
-	// Create a test file
-	testFile := filepath.Join(tempDir, "test.json")
-	testContent := `{"test": "data"}`
-	err := os.WriteFile(testFile, []byte(testContent), 0644)
-	require.NoError(t, err)
-
-	t.Run("create backup", func(t *testing.T) {
-		backupPath, err := fs.CreateBackup(testFile)
-		require.NoError(t, err)
-
-		assert.FileExists(t, backupPath)
-
-		// Verify backup content matches original
-		backupContent, err := os.ReadFile(backupPath)
-		require.NoError(t, err)
-		assert.Equal(t, testContent, string(backupContent))
-	})
-
-	t.Run("backup nonexistent file", func(t *testing.T) {
-		_, err := fs.CreateBackup("nonexistent.json")
-		assert.Error(t, err)
-		assert.Contains(t, err.Error(), "source file does not exist")
-	})
-
-	t.Run("recover from backup", func(t *testing.T) {
-		// Create backup first
-		_, err := fs.CreateBackup(testFile)
-		require.NoError(t, err)
-
-		// Modify original file
-		err = os.WriteFile(testFile, []byte(`{"modified": "data"}`), 0644)
-		require.NoError(t, err)
-
-		// Recover from backup
-		err = fs.RecoverFromBackup(testFile)
-		require.NoError(t, err)
-
-		// Verify original content is restored
-		content, err := os.ReadFile(testFile)
-		require.NoError(t, err)
-		assert.Equal(t, testContent, string(content))
-	})
-
-	t.Run("rotate backups", func(t *testing.T) {
-		// Create multiple backups
-		for i := 0; i < 10; i++ {
-			_, err := fs.CreateBackup(testFile)
-			require.NoError(t, err)
-			time.Sleep(1 * time.Millisecond) // Ensure different timestamps
-		}
-
-		// Rotate to keep only 3 backups
-		err := fs.RotateBackups(testFile, 3)
-		require.NoError(t, err)
-
-		// Verify only 3 backups remain
-		backupPattern := fs.getBackupPath(testFile, "*")
-		matches, err := filepath.Glob(backupPattern)
-		require.NoError(t, err)
-		assert.LessOrEqual(t, len(matches), 3)
-	})
-}
-
 func TestFileStorage_ConcurrentOperations(t *testing.T) {
 	tempDir := t.TempDir()
-	fs := NewFileStorage(filepath.Join(tempDir, "backups"))
+	fs := NewFileStorage()
 
 	session := &Session{
 		Name: "concurrent-test",

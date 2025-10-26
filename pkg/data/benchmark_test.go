@@ -42,7 +42,7 @@ func BenchmarkCSVLoading(b *testing.B) {
 				b.Fatal(err)
 			}
 
-			storage := NewFileStorage(testDir)
+			storage := NewFileStorage()
 			config := DefaultSessionConfig()
 
 			b.ResetTimer()
@@ -85,7 +85,7 @@ func BenchmarkMemoryUsage(b *testing.B) {
 			b.Fatal(err)
 		}
 
-		storage := NewFileStorage(testDir)
+		storage := NewFileStorage()
 		config := DefaultSessionConfig()
 
 		b.ResetTimer()
@@ -142,7 +142,7 @@ func BenchmarkSessionOperations(b *testing.B) {
 
 	b.Run("Session_Save_Load_Performance", func(b *testing.B) {
 		// Constitutional requirement: Session operations should be fast
-		storage := NewFileStorage(testDir)
+		storage := NewFileStorage()
 
 		// Create test session with substantial data
 		proposals := make([]Proposal, 50)
@@ -226,7 +226,7 @@ func TestConstitutionalRequirements(t *testing.T) {
 		os.MkdirAll(testDir, 0755)
 		defer os.RemoveAll(testDir)
 
-		storage := NewFileStorage(testDir)
+		storage := NewFileStorage()
 		config := DefaultSessionConfig()
 
 		// Test with different line endings (Windows CRLF)
@@ -247,7 +247,7 @@ func TestConstitutionalRequirements(t *testing.T) {
 
 		// Test nested directory creation (cross-platform paths)
 		nestedDir := filepath.Join(testDir, "level1", "level2")
-		nestedStorage := NewFileStorage(nestedDir) // Should create nested directories
+		nestedStorage := NewFileStorage() // Should create nested directories
 
 		session := &Session{
 			Name:      "cross_platform_session",

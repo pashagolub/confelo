@@ -88,21 +88,6 @@ func (m *mockStorage) LoadSession(filename string) (*data.Session, error) {
 	return session, nil
 }
 
-func (m *mockStorage) CreateBackup(filename string) (string, error) {
-	if m.saveError != nil {
-		return "", m.saveError
-	}
-	return filename + ".bak", nil
-}
-
-func (m *mockStorage) RecoverFromBackup(filename string) error {
-	return m.loadError
-}
-
-func (m *mockStorage) RotateBackups(basePath string, maxBackups int) error {
-	return m.saveError
-}
-
 // mockScreen is a mock implementation of Screen interface for testing
 type mockScreen struct {
 	title       string

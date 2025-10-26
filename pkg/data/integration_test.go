@@ -216,7 +216,7 @@ func TestEndToEndWorkflow(t *testing.T) {
 	require.NoError(t, err)
 
 	t.Run("CSV Loading Performance", func(t *testing.T) {
-		storage := NewFileStorage(testDir)
+		storage := NewFileStorage()
 		config := DefaultSessionConfig()
 
 		// Test CSV loading speed for constitutional compliance
@@ -791,7 +791,7 @@ func TestCompleteWorkflowNoJSONLIntegration(t *testing.T) {
 		require.NoError(t, err)
 
 		// Load proposals
-		storage := NewFileStorage(tempDir)
+		storage := NewFileStorage()
 		config := DefaultSessionConfig()
 		parseResult, err := storage.LoadProposalsFromCSVWithElo(csvFile, config.CSV, &config.Elo)
 		require.NoError(t, err)

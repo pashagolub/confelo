@@ -248,7 +248,7 @@ func LoadSession(sessionName string, storageDir string) (*Session, error) {
 	}
 
 	// Use FileStorage to load session properly (handles proposal reloading from CSV)
-	storage := NewFileStorage(filepath.Join(storageDir, "backups"))
+	storage := NewFileStorage()
 	session, err := storage.LoadSession(sessionFile)
 	if err != nil {
 		return nil, err
@@ -303,7 +303,7 @@ func (s *Session) Save() error {
 	s.UpdatedAt = time.Now()
 
 	// Use FileStorage for consistent saving
-	storage := NewFileStorage(filepath.Join(s.storageDirectory, "backups"))
+	storage := NewFileStorage()
 	sessionFile := filepath.Join(s.storageDirectory, SanitizeFilename(s.Name)+".json")
 	return storage.SaveSession(s, sessionFile)
 }
@@ -1579,7 +1579,7 @@ func (sd *SessionDetector) ValidateSession(sessionPath string) error {
 	}
 
 	// Check for required fields
-	requiredFields := []string{"id", "name", "created_at", "config"}
+	requiredFields := []string{"name", "created_at", "config"}
 	for _, field := range requiredFields {
 		if _, exists := sessionData[field]; !exists {
 			return fmt.Errorf("missing required field '%s' in session file", field)

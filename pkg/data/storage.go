@@ -11,7 +11,6 @@ import (
 	"io"
 	"os"
 	"path/filepath"
-	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -39,30 +38,17 @@ type Storage interface {
 	// JSON Operations - Session management only
 	SaveSession(session *Session, filename string) error
 	LoadSession(filename string) (*Session, error)
-
-	// Backup and Recovery
-	CreateBackup(filename string) (string, error)
-	RecoverFromBackup(filename string) error
-	RotateBackups(basePath string, maxBackups int) error
 }
 
 // FileStorage implements the Storage interface with file-based operations
 type FileStorage struct {
 	mu           sync.RWMutex // Protects concurrent operations
-	backupDir    string       // Directory for backup files
-	maxBackups   int          // Maximum number of backups to keep
 	atomicWrites bool         // Whether to use atomic writes for safety
 }
 
 // NewFileStorage creates a new FileStorage instance with sensible defaults
-func NewFileStorage(backupDir string) *FileStorage {
-	if backupDir == "" {
-		backupDir = "backups"
-	}
-
+func NewFileStorage() *FileStorage {
 	return &FileStorage{
-		backupDir:    backupDir,
-		maxBackups:   5,
 		atomicWrites: true,
 	}
 }
@@ -72,18 +58,6 @@ func (fs *FileStorage) SetAtomicWrites(enabled bool) {
 	fs.mu.Lock()
 	defer fs.mu.Unlock()
 	fs.atomicWrites = enabled
-}
-
-// SetMaxBackups sets the maximum number of backups to retain
-func (fs *FileStorage) SetMaxBackups(max int) {
-	fs.mu.Lock()
-	defer fs.mu.Unlock()
-	fs.maxBackups = max
-}
-
-// ensureBackupDir creates the backup directory if it doesn't exist
-func (fs *FileStorage) ensureBackupDir() error {
-	return os.MkdirAll(fs.backupDir, 0755)
 }
 
 // LoadProposalsFromCSV implements CSV input parsing with configurable formats
@@ -533,14 +507,6 @@ func (fs *FileStorage) SaveSession(session *Session, filename string) error {
 		session.ProposalScores[proposal.ID] = proposal.Score
 	}
 
-	// Create backup before overwriting existing session
-	if _, err := os.Stat(filename); err == nil {
-		if _, err := fs.CreateBackup(filename); err != nil {
-			// Log backup failure but don't fail save operation
-			// In production, might want to log this warning
-		}
-	}
-
 	// Ensure directory exists
 	if err := os.MkdirAll(filepath.Dir(filename), 0755); err != nil {
 		return fmt.Errorf("%w: cannot create session directory: %v", ErrJSONSerialization, err)
@@ -607,24 +573,12 @@ func (fs *FileStorage) saveSessionDirect(session *Session, filename string) erro
 	return file.Sync()
 }
 
-// LoadSession implements JSON session loading with corruption recovery
+// LoadSession implements JSON session loading
 func (fs *FileStorage) LoadSession(filename string) (*Session, error) {
 	fs.mu.RLock()
 	defer fs.mu.RUnlock()
 
-	// Try to load the main file
-	session, err := fs.loadSessionFromFile(filename)
-	if err != nil {
-		// If main file is corrupted, try backup recovery
-		if errors.Is(err, ErrCorruptedFile) {
-			if backupSession, backupErr := fs.tryBackupRecovery(filename); backupErr == nil {
-				return backupSession, nil
-			}
-		}
-		return nil, err
-	}
-
-	return session, nil
+	return fs.loadSessionFromFile(filename)
 }
 
 // loadSessionFromFile loads session from a specific file with corruption detection
@@ -706,133 +660,4 @@ func (fs *FileStorage) loadSessionFromFile(filename string) (*Session, error) {
 	session.storageDirectory = sessionDir
 
 	return &session, nil
-}
-
-// tryBackupRecovery attempts to recover from the most recent backup
-func (fs *FileStorage) tryBackupRecovery(filename string) (*Session, error) {
-	backupPattern := fs.getBackupPath(filename, "*")
-	matches, err := filepath.Glob(backupPattern)
-	if err != nil || len(matches) == 0 {
-		return nil, fmt.Errorf("no backups found for recovery")
-	}
-
-	// Try backups in reverse chronological order (most recent first)
-	sort.Sort(sort.Reverse(sort.StringSlice(matches)))
-
-	for _, backupFile := range matches {
-		if session, err := fs.loadSessionFromFile(backupFile); err == nil {
-			return session, nil
-		}
-	}
-
-	return nil, fmt.Errorf("all backups are corrupted")
-}
-
-// CreateBackup creates a timestamped backup of the specified file
-func (fs *FileStorage) CreateBackup(filename string) (string, error) {
-	if err := fs.ensureBackupDir(); err != nil {
-		return "", fmt.Errorf("%w: cannot create backup directory: %v", ErrBackupRotation, err)
-	}
-
-	// Check if source file exists
-	if _, err := os.Stat(filename); os.IsNotExist(err) {
-		return "", fmt.Errorf("%w: source file does not exist", ErrBackupRotation)
-	}
-
-	// Generate backup filename with timestamp
-	timestamp := time.Now().Format("20060102_150405")
-	backupPath := fs.getBackupPath(filename, timestamp)
-
-	// Copy file to backup location
-	if err := fs.copyFile(filename, backupPath); err != nil {
-		return "", fmt.Errorf("%w: failed to copy file to backup: %v", ErrBackupRotation, err)
-	}
-
-	return backupPath, nil
-}
-
-// RecoverFromBackup restores a file from its most recent backup
-func (fs *FileStorage) RecoverFromBackup(filename string) error {
-	backupPattern := fs.getBackupPath(filename, "*")
-	matches, err := filepath.Glob(backupPattern)
-	if err != nil {
-		return fmt.Errorf("%w: failed to find backups: %v", ErrBackupRotation, err)
-	}
-
-	if len(matches) == 0 {
-		return fmt.Errorf("%w: no backups found", ErrBackupRotation)
-	}
-
-	// Get most recent backup (lexicographically last due to timestamp format)
-	sort.Strings(matches)
-	mostRecent := matches[len(matches)-1]
-
-	// Copy backup to original location
-	if err := fs.copyFile(mostRecent, filename); err != nil {
-		return fmt.Errorf("%w: failed to restore from backup: %v", ErrBackupRotation, err)
-	}
-
-	return nil
-}
-
-// RotateBackups removes old backups to maintain maximum count
-func (fs *FileStorage) RotateBackups(basePath string, maxBackups int) error {
-	if maxBackups <= 0 {
-		return nil // No rotation needed
-	}
-
-	backupPattern := fs.getBackupPath(basePath, "*")
-	matches, err := filepath.Glob(backupPattern)
-	if err != nil {
-		return fmt.Errorf("%w: failed to find backups for rotation: %v", ErrBackupRotation, err)
-	}
-
-	if len(matches) <= maxBackups {
-		return nil // Within limits
-	}
-
-	// Sort by filename (timestamp) and remove oldest
-	sort.Strings(matches)
-	toRemove := matches[:len(matches)-maxBackups]
-
-	for _, backup := range toRemove {
-		if err := os.Remove(backup); err != nil {
-			// Continue removing others even if one fails
-			continue
-		}
-	}
-
-	return nil
-}
-
-// getBackupPath generates backup file path with timestamp pattern
-func (fs *FileStorage) getBackupPath(originalPath, timestamp string) string {
-	baseName := filepath.Base(originalPath)
-	ext := filepath.Ext(baseName)
-	nameWithoutExt := strings.TrimSuffix(baseName, ext)
-
-	backupName := fmt.Sprintf("%s_%s%s", nameWithoutExt, timestamp, ext)
-	return filepath.Join(fs.backupDir, backupName)
-}
-
-// copyFile copies a file from source to destination
-func (fs *FileStorage) copyFile(src, dst string) error {
-	sourceFile, err := os.Open(src)
-	if err != nil {
-		return err
-	}
-	defer sourceFile.Close()
-
-	destFile, err := os.Create(dst)
-	if err != nil {
-		return err
-	}
-	defer destFile.Close()
-
-	_, err = io.Copy(destFile, sourceFile)
-	if err != nil {
-		return err
-	}
-
-	return destFile.Sync()
 }
