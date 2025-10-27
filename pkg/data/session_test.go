@@ -680,7 +680,7 @@ func TestSessionFileValidation(t *testing.T) {
 			sessionFile := filepath.Join(sessionsDir, "session_TestValidation_12345.json")
 			err := os.WriteFile(sessionFile, []byte(tt.sessionData), 0644)
 			require.NoError(t, err)
-			defer os.Remove(sessionFile)
+			defer func() { _ = os.Remove(sessionFile) }()
 
 			// This will fail until we implement session validation
 			// Following TDD approach - write failing tests first
@@ -723,7 +723,7 @@ func createTestSessionFile(sessionsDir, sessionName string) error {
 	if err != nil {
 		return err
 	}
-	defer file.Close()
+	defer func() { _ = file.Close() }()
 
 	encoder := json.NewEncoder(file)
 	return encoder.Encode(sessionData)
@@ -733,7 +733,7 @@ func createTestSessionFile(sessionsDir, sessionName string) error {
 func cleanupTestSessionFile(sessionsDir, sessionName string) {
 	matches, _ := filepath.Glob(filepath.Join(sessionsDir, fmt.Sprintf("session_%s_*", sessionName)))
 	for _, match := range matches {
-		os.Remove(match)
+		_ = os.Remove(match)
 	}
 }
 
@@ -865,7 +865,7 @@ func TestSessionDetectorComprehensive(t *testing.T) {
 		invalidFile := filepath.Join(sessionsDir, "invalid.json")
 		err = os.WriteFile(invalidFile, []byte("invalid json"), 0644)
 		require.NoError(t, err)
-		defer os.Remove(invalidFile)
+		defer func() { _ = os.Remove(invalidFile) }()
 
 		err = detector.ValidateSession(invalidFile)
 		assert.Error(t, err)
@@ -876,7 +876,7 @@ func TestSessionDetectorComprehensive(t *testing.T) {
 		incompleteData := `{"name":"Test"}`
 		err = os.WriteFile(incompleteFile, []byte(incompleteData), 0644)
 		require.NoError(t, err)
-		defer os.Remove(incompleteFile)
+		defer func() { _ = os.Remove(incompleteFile) }()
 
 		err = detector.ValidateSession(incompleteFile)
 		assert.Error(t, err)

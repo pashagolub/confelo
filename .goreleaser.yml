@@ -1,0 +1,61 @@
+version: 2
+
+before:
+  hooks:
+    - go mod download
+builds:
+- main: ./cmd/confelo
+  env:
+    - CGO_ENABLED=0
+  goos:
+    - linux
+    - darwin
+    - windows
+  goarch:
+    - amd64
+    - arm64    
+
+archives:
+- name_template: >-
+      {{ .ProjectName }}_
+      {{- title .Os }}_
+      {{- if eq .Arch "amd64" }}x86_64
+      {{- else if eq .Arch "386" }}i386
+      {{- else }}{{ .Arch }}{{ end }}
+  wrap_in_directory: true
+  format_overrides:
+    - goos: windows
+      formats: [ 'zip' ]
+  files:
+    - LICENSE
+    - README.md
+checksum:
+  name_template: 'checksums.txt'
+changelog:
+  sort: asc
+  filters:
+    exclude:
+    - '^docs:'
+    - '^test:'
+
+
+nfpms:
+  # note that this is an array of nfpm configs
+  -
+    file_name_template: >-
+      {{ .ProjectName }}_
+      {{- title .Os }}_
+      {{- if eq .Arch "amd64" }}x86_64
+      {{- else if eq .Arch "386" }}i386
+      {{- else }}{{ .Arch }}{{ end }}
+
+    homepage: https://github.com/pashagolub/confelo/
+    maintainer: Pavlo Golub <pavlo.golub@gmail.com>
+    description: confelo - A privacy-first terminal user interface application for ranking conference talk proposals using the Elo rating system
+
+    license: MIT Licence
+
+    # Formats to be generated.
+    formats:
+      - deb
+      - rpm

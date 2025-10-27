@@ -19,11 +19,11 @@ func TestEloEngineIntegration(t *testing.T) {
 	// Create temporary CSV file
 	tmpCSV, err := os.CreateTemp("", "test_integration_*.csv")
 	require.NoError(t, err)
-	defer os.Remove(tmpCSV.Name())
+	defer func() { _ = os.Remove(tmpCSV.Name()) }()
 
 	_, err = tmpCSV.WriteString("id,title,speaker\n1,Proposal A,Alice\n2,Proposal B,Bob\n")
 	require.NoError(t, err)
-	tmpCSV.Close()
+	_ = tmpCSV.Close()
 
 	// Create config file with custom Elo settings
 	configYAML := `
@@ -50,7 +50,7 @@ export:
 
 	tmpDir, err := os.MkdirTemp("", "test_config_")
 	require.NoError(t, err)
-	defer os.RemoveAll(tmpDir)
+	defer func() { _ = os.RemoveAll(tmpDir) }()
 
 	configFile := filepath.Join(tmpDir, "confelo.yaml")
 	err = os.WriteFile(configFile, []byte(configYAML), 0644)
@@ -202,7 +202,7 @@ func TestEndToEndWorkflow(t *testing.T) {
 	testDir := filepath.Join(".", "test_e2e")
 	err := os.MkdirAll(testDir, 0755)
 	require.NoError(t, err)
-	defer os.RemoveAll(testDir)
+	defer func() { _ = os.RemoveAll(testDir) }()
 
 	// Test data - create a small CSV for testing
 	csvContent := `id,title,abstract,speaker,score
@@ -306,7 +306,7 @@ func TestQuickstartScenario3_ErrorHandling(t *testing.T) {
 		corruptedContent := `{"id": "incomplete json`
 		err = os.WriteFile(corruptedFile, []byte(corruptedContent), 0644)
 		require.NoError(t, err)
-		defer os.Remove(corruptedFile)
+		defer func() { _ = os.Remove(corruptedFile) }()
 
 		// This should fail validation
 		detector := NewSessionDetector(sessionsDir)
@@ -341,7 +341,7 @@ func createTestSessionFileForIntegration(sessionsDir, sessionName string) error 
 	if err != nil {
 		return err
 	}
-	defer file.Close()
+	defer func() { _ = file.Close() }()
 
 	encoder := json.NewEncoder(file)
 	return encoder.Encode(sessionData)
@@ -351,7 +351,7 @@ func createTestSessionFileForIntegration(sessionsDir, sessionName string) error 
 func cleanupTestSessionFileForIntegration(sessionsDir, sessionName string) {
 	matches, _ := filepath.Glob(filepath.Join(sessionsDir, fmt.Sprintf("session_%s_*", sessionName)))
 	for _, match := range matches {
-		os.Remove(match)
+		_ = os.Remove(match)
 	}
 }
 

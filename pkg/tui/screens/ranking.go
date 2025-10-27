@@ -20,7 +20,9 @@ import (
 type SortOrder int
 
 const (
+	// SortAsc represents ascending sort order
 	SortAsc SortOrder = iota
+	// SortDesc represents descending sort order
 	SortDesc
 )
 
@@ -28,11 +30,17 @@ const (
 type SortField int
 
 const (
+	// SortByRank sorts proposals by their ranking position
 	SortByRank SortField = iota
+	// SortByScore sorts proposals by their Elo score
 	SortByScore
+	// SortByExportScore sorts proposals by their export score
 	SortByExportScore
+	// SortByTitle sorts proposals alphabetically by title
 	SortByTitle
+	// SortBySpeaker sorts proposals alphabetically by speaker name
 	SortBySpeaker
+	// SortByConfidence sorts proposals by confidence level
 	SortByConfidence
 )
 
@@ -61,9 +69,6 @@ type RankingScreen struct {
 	sortField   SortField
 	sortOrder   SortOrder
 	selectedRow int
-
-	// Export state
-	exportInProgress bool
 
 	// App reference
 	app any

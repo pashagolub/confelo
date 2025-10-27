@@ -298,7 +298,7 @@ PROP001,Test Proposal,Test Speaker`
 		// Clean up audit trail to prevent file lock issues
 		defer func() {
 			if loadedSession != nil {
-				loadedSession.Close()
+				_ = loadedSession.Close()
 			}
 		}()
 

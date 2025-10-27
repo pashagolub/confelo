@@ -19,7 +19,9 @@ import (
 type ScreenType int
 
 const (
+	// ScreenComparison represents the proposal comparison screen
 	ScreenComparison ScreenType = iota
+	// ScreenRanking represents the ranking display screen
 	ScreenRanking
 )
 
@@ -316,7 +318,7 @@ func (a *App) Stop() {
 	a.state.mu.RUnlock()
 
 	if running {
-		a.Exit()
+		_ = a.Exit()
 	}
 }
 

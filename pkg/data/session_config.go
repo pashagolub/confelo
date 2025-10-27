@@ -157,7 +157,7 @@ func (sc *SessionConfig) Validate() error {
 	}
 
 	if err := sc.Elo.Validate(); err != nil {
-		return fmt.Errorf("Elo config validation failed: %w", err)
+		return fmt.Errorf("elo config validation failed: %w", err)
 	}
 
 	if err := sc.UI.Validate(); err != nil {

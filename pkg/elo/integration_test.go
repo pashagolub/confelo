@@ -1,10 +1,6 @@
 package elo
 
 import (
-	"encoding/json"
-	"io"
-	"os"
-	"path/filepath"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -53,42 +49,6 @@ type RatingBounds struct {
 	} `json:"k_factor_validation"`
 	RequiredFields []string `json:"required_fields"`
 	OptionalFields []string `json:"optional_fields"`
-}
-
-func loadExpectedResults(t *testing.T) ExpectedResults {
-	// Get the path to testdata/expected_results.json
-	wd, err := os.Getwd()
-	require.NoError(t, err)
-
-	// Navigate up to find the testdata directory (handling both pkg/elo and root contexts)
-	testDataPath := ""
-	for i := 0; i < 3; i++ { // Try up to 3 levels up
-		candidate := filepath.Join(wd, "testdata", "expected_results.json")
-		if _, err := os.Stat(candidate); err == nil {
-			testDataPath = candidate
-			break
-		}
-		wd = filepath.Dir(wd)
-	}
-
-	require.NotEmpty(t, testDataPath, "Could not find testdata/expected_results.json")
-
-	file, err := os.Open(testDataPath)
-	require.NoError(t, err, "Failed to open expected_results.json")
-	defer func() {
-		if closeErr := file.Close(); closeErr != nil {
-			t.Logf("Failed to close file: %v", closeErr)
-		}
-	}()
-
-	data, err := io.ReadAll(file)
-	require.NoError(t, err, "Failed to read expected_results.json")
-
-	var results ExpectedResults
-	err = json.Unmarshal(data, &results)
-	require.NoError(t, err, "Failed to parse expected_results.json")
-
-	return results
 }
 
 func TestStandardChessEloExamples(t *testing.T) {

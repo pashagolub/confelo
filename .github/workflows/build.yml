@@ -1,0 +1,80 @@
+name: Build and Test
+
+permissions:
+  contents: write
+  packages: write
+  pages: write
+
+on:
+  push:
+    branches:
+      - master
+  pull_request:
+    paths-ignore: ['docs/**', 'mkdocs.yml']
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true    
+
+# This workflow uses testcontainers-go for PostgreSQL testing
+# Docker provides consistent environment - only Ubuntu needed
+
+jobs:
+
+  test:
+    if: true # false to skip job during debug
+    name: Test and Build with Testcontainers
+    runs-on: ubuntu-latest
+    steps:
+
+    - name: Check out code
+      uses: actions/checkout@v5
+
+    - name: Set up Golang
+      uses: actions/setup-go@v6
+      with:
+        go-version: '1.25'
+
+    - name: Get dependencies
+      run: |
+        go mod download
+        go version
+
+    - name: GolangCI-Lint
+      uses: golangci/golangci-lint-action@v8
+      with:
+        version: latest
+        
+    - name: Test with Testcontainers
+      run: go test -failfast -v -timeout=300s -coverprofile=profile.cov ./...
+
+    - name: Upload coverage profile
+      uses: actions/upload-artifact@v4
+      with:
+        name: coverage-profile-${{ github.run_id }}
+        path: profile.cov
+        retention-days: 1
+
+    - name: Run GoReleaser
+      uses: goreleaser/goreleaser-action@v6
+      with:
+        version: latest
+        args: release --snapshot --skip=publish --clean
+
+  coverage:
+    if: true # false to skip job during debug
+    name: Coverage Report
+    runs-on: ubuntu-latest
+    needs: [test]
+    steps:
+
+    - name: Download coverage profile
+      uses: actions/download-artifact@v5
+      with:
+        name: coverage-profile-${{ github.run_id }}
+
+    - name: Send coverage to Coveralls
+      uses: coverallsapp/github-action@v2
+      with:
+        file: profile.cov
