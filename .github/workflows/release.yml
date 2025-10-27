@@ -1,0 +1,39 @@
+name: Release
+
+permissions:
+  contents: write
+  packages: write
+  pages: write
+  deployments: write
+  pull-requests: write
+  issues: write
+
+on:
+  release:
+    types: [created]
+
+jobs:
+
+  goreleaser:
+    if: true # false to skip job during debug
+    runs-on: ubuntu-latest
+    name: goreleaser
+    steps:
+
+    - name: Set up Golang
+      uses: actions/setup-go@v6
+      with:
+        go-version: '1.25'
+
+    - name: Check out code into the Go module directory
+      uses: actions/checkout@v5
+
+    - name: Unshallow
+      run: git fetch --prune --unshallow
+
+    - name: Release via goreleaser
+      uses: goreleaser/goreleaser-action@v6
+      with:
+        args: release
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}     
