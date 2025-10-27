@@ -1,13 +1,10 @@
-version: 2
+version: "2"
 
 run:
   timeout: 3m
   tests: false
-  skip-dirs:
-    - testdata
 
 issues:
-  exclude-use-default: false
   max-issues-per-linter: 0
   max-same-issues: 0
 
