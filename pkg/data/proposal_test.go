@@ -392,7 +392,7 @@ func TestProposalCollection_Update(t *testing.T) {
 	// Create and add initial proposal
 	proposal1, _ := NewProposal("TALK-001", "Title 1", config)
 	proposal1.UpdateScore(85.0)
-	collection.AddProposal(*proposal1)
+	_ = collection.AddProposal(*proposal1)
 
 	// Update proposal
 	updated, _ := NewProposal("TALK-001", "Updated Title", config)

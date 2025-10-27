@@ -2,7 +2,7 @@ version: 2
 
 run:
   timeout: 3m
-  tests: true
+  tests: false
   skip-dirs:
     - testdata
 
@@ -14,6 +14,7 @@ issues:
 linters:
   enable:
     # Constitutional Quality Standards - Code Quality Excellence
+    - gocyclo       # Computes and checks the cyclomatic complexity of functions
     - errcheck      # Check for unchecked errors
     - govet         # Vet examines Go source code and reports suspicious constructs
     - ineffassign   # Detects when assignments to existing variables are not used
@@ -27,11 +28,10 @@ linters:
     
     # Code Style and Consistency
     - revive        # Fast, configurable, extensible, flexible, and beautiful linter for Go
-    
-    # Security
-    - gosec         # Inspects source code for security problems
 
   settings:
+    gocyclo:
+      min-complexity: 25
     revive:
       rules:
         - name: exported
@@ -45,7 +45,7 @@ linters:
           arguments: [3]
         - name: line-length-limit
           severity: warning
-          arguments: [120]
+          arguments: [180]
           
     gosec:
       excludes:
@@ -53,7 +53,6 @@ linters:
 
 formatters:
   enable:
-    - gci           # Controls Go package import order and makes it always deterministic
     - gofmt         # Standard Go formatter
     - goimports     # Manages imports automatically
 

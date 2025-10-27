@@ -13,11 +13,11 @@ func TestParseCLI(t *testing.T) {
 	// Create temporary CSV file for tests
 	tmpCSV, err := os.CreateTemp("", "test_*.csv")
 	require.NoError(t, err)
-	defer os.Remove(tmpCSV.Name())
+	defer func() { _ = os.Remove(tmpCSV.Name()) }()
 
 	_, err = tmpCSV.WriteString("id,title,speaker\n1,Test Proposal,John Doe\n")
 	require.NoError(t, err)
-	tmpCSV.Close()
+	_ = tmpCSV.Close()
 
 	t.Run("ValidNewSession", func(t *testing.T) {
 		args := []string{
@@ -153,8 +153,8 @@ func TestValidateInputForNewSession(t *testing.T) {
 	// Create temporary CSV file
 	tmpCSV, err := os.CreateTemp("", "test_*.csv")
 	require.NoError(t, err)
-	defer os.Remove(tmpCSV.Name())
-	tmpCSV.Close()
+	defer func() { _ = os.Remove(tmpCSV.Name()) }()
+	_ = tmpCSV.Close()
 
 	t.Run("ValidInput", func(t *testing.T) {
 		opts := &CLIOptions{
@@ -267,7 +267,7 @@ func TestCLIOnlyConfiguration(t *testing.T) {
 		tempDir := t.TempDir()
 		originalDir, err := os.Getwd()
 		require.NoError(t, err)
-		defer os.Chdir(originalDir)
+		defer func() { _ = os.Chdir(originalDir) }()
 
 		err = os.Chdir(tempDir)
 		require.NoError(t, err)
@@ -275,11 +275,11 @@ func TestCLIOnlyConfiguration(t *testing.T) {
 		// Create a temporary CSV file for input
 		tmpCSV, err := os.CreateTemp(tempDir, "test_*.csv")
 		require.NoError(t, err)
-		defer os.Remove(tmpCSV.Name())
+		defer func() { _ = os.Remove(tmpCSV.Name()) }()
 
 		_, err = tmpCSV.WriteString("id,title,speaker\n1,Test Proposal,John Doe\n")
 		require.NoError(t, err)
-		tmpCSV.Close()
+		_ = tmpCSV.Close()
 
 		// Verify CLI parsing works without any config files present
 		args := []string{
@@ -311,8 +311,8 @@ func TestCLIOnlyConfiguration(t *testing.T) {
 		// Test that all configuration can be specified via CLI flags
 		tmpCSV, err := os.CreateTemp("", "test_*.csv")
 		require.NoError(t, err)
-		defer os.Remove(tmpCSV.Name())
-		tmpCSV.Close()
+		defer func() { _ = os.Remove(tmpCSV.Name()) }()
+		_ = tmpCSV.Close()
 
 		args := []string{
 			"--session-name", "FullCLIConfig",
@@ -347,10 +347,10 @@ func TestCLIOnlyConfiguration(t *testing.T) {
 
 	t.Run("NoEnvironmentVariableSupport", func(t *testing.T) {
 		// Test that environment variables are not used (CLI-only approach)
-		os.Setenv("CONFELO_SESSION_NAME", "FromEnv")
-		os.Setenv("CONFELO_COMPARISON_MODE", "trio")
-		defer os.Unsetenv("CONFELO_SESSION_NAME")
-		defer os.Unsetenv("CONFELO_COMPARISON_MODE")
+		_ = os.Setenv("CONFELO_SESSION_NAME", "FromEnv")
+		_ = os.Setenv("CONFELO_COMPARISON_MODE", "trio")
+		defer func() { _ = os.Unsetenv("CONFELO_SESSION_NAME") }()
+		defer func() { _ = os.Unsetenv("CONFELO_COMPARISON_MODE") }()
 
 		// Parse CLI args without session-name (should fail, not use env var)
 		args := []string{

@@ -56,9 +56,13 @@ func (sm SessionMode) String() string {
 type SessionStatus string
 
 const (
-	StatusCreated  SessionStatus = "created"
-	StatusActive   SessionStatus = "active"
-	StatusPaused   SessionStatus = "paused"
+	// StatusCreated indicates a newly created session that hasn't started comparisons yet
+	StatusCreated SessionStatus = "created"
+	// StatusActive indicates a session with ongoing comparisons
+	StatusActive SessionStatus = "active"
+	// StatusPaused indicates a temporarily paused session
+	StatusPaused SessionStatus = "paused"
+	// StatusComplete indicates a finished session with final rankings
 	StatusComplete SessionStatus = "complete"
 )
 
@@ -66,9 +70,12 @@ const (
 type ComparisonMethod string
 
 const (
+	// MethodPairwise compares two proposals at a time
 	MethodPairwise ComparisonMethod = "pairwise"
-	MethodTrio     ComparisonMethod = "trio"
-	MethodQuartet  ComparisonMethod = "quartet"
+	// MethodTrio compares three proposals at a time
+	MethodTrio ComparisonMethod = "trio"
+	// MethodQuartet compares four proposals at a time
+	MethodQuartet ComparisonMethod = "quartet"
 )
 
 // Session manages the complete ranking workflow and persistent state
@@ -374,7 +381,7 @@ func (s *Session) StartComparison(proposalIDs []string, method ComparisonMethod)
 	}
 
 	// Validate comparison method matches proposal count
-	expectedCount := 2
+	var expectedCount int
 	switch method {
 	case MethodPairwise:
 		expectedCount = 2
@@ -1013,10 +1020,7 @@ func DeleteSession(sessionName, storageDir string) error {
 	}
 
 	for _, backup := range backups {
-		if err := os.Remove(backup); err != nil {
-			// Continue removing other backups even if one fails
-			// TODO: Add proper logging
-		}
+		_ = os.Remove(backup) // Continue removing other backups even if one fails
 	}
 
 	return nil
@@ -1118,7 +1122,7 @@ func (s *Session) ProcessPairwiseComparison(winnerID, loserID string, engine Elo
 	// Calculate new ratings using Elo engine
 	result, err := engine.CalculatePairwiseWithResult(winnerRating, loserRating)
 	if err != nil {
-		return fmt.Errorf("Elo calculation failed: %w", err)
+		return fmt.Errorf("elo calculation failed: %w", err)
 	}
 
 	// Complete the comparison with results (internal version, mutex already held)
@@ -1238,7 +1242,7 @@ func (s *Session) ProcessMultiProposalComparison(rankings []string, engine EloEn
 			// Calculate pairwise Elo update
 			result, err := engine.CalculatePairwiseWithResult(winnerRating, loserRating)
 			if err != nil {
-				return fmt.Errorf("Elo calculation failed for %s vs %s: %w", winnerID, loserID, err)
+				return fmt.Errorf("elo calculation failed for %s vs %s: %w", winnerID, loserID, err)
 			}
 
 			// Collect updates
@@ -1447,14 +1451,7 @@ func (s *Session) GetOptimalMatchups(count int) []ProposalPair {
 	results := make([]ProposalPair, maxResults)
 	for i := 0; i < maxResults; i++ {
 		candidate := candidates[i]
-		results[i] = ProposalPair{
-			ProposalA:       candidate.ProposalA,
-			ProposalB:       candidate.ProposalB,
-			Priority:        candidate.Priority,
-			RatingDistance:  candidate.RatingDistance,
-			ComparisonCount: candidate.ComparisonCount,
-			LastCompared:    candidate.LastCompared,
-		}
+		results[i] = ProposalPair(candidate)
 	}
 
 	return results
@@ -1569,7 +1566,7 @@ func (sd *SessionDetector) ValidateSession(sessionPath string) error {
 		}
 		return fmt.Errorf("cannot read session file: %w", err)
 	}
-	defer file.Close()
+	defer func() { _ = file.Close() }()
 
 	// Validate JSON structure by attempting to decode
 	var sessionData map[string]any
@@ -1602,7 +1599,9 @@ func (sd *SessionDetector) validateSessionName(name string) error {
 	}
 
 	// Check for reserved names (Windows)
-	reservedNames := []string{"CON", "PRN", "AUX", "NUL", "COM1", "COM2", "COM3", "COM4", "COM5", "COM6", "COM7", "COM8", "COM9", "LPT1", "LPT2", "LPT3", "LPT4", "LPT5", "LPT6", "LPT7", "LPT8", "LPT9"}
+	reservedNames := []string{"CON", "PRN", "AUX", "NUL", "COM1", "COM2", "COM3", "COM4",
+		"COM5", "COM6", "COM7", "COM8", "COM9", "LPT1", "LPT2", "LPT3", "LPT4", "LPT5",
+		"LPT6", "LPT7", "LPT8", "LPT9"}
 	upperName := strings.ToUpper(name)
 	for _, reserved := range reservedNames {
 		if upperName == reserved {

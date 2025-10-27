@@ -70,8 +70,8 @@ func BenchmarkCSVLoading(b *testing.B) {
 // BenchmarkMemoryUsage tests memory usage for constitutional compliance
 func BenchmarkMemoryUsage(b *testing.B) {
 	testDir := filepath.Join(".", "benchmark_memory")
-	os.MkdirAll(testDir, 0755)
-	defer os.RemoveAll(testDir)
+	_ = os.MkdirAll(testDir, 0755)
+	defer func() { _ = os.RemoveAll(testDir) }()
 
 	b.Run("Memory_Usage_200_Proposals", func(b *testing.B) {
 		// Constitutional requirement: <100MB for 200 proposals
@@ -112,7 +112,7 @@ func BenchmarkMemoryUsage(b *testing.B) {
 				Proposals: result.Proposals,
 			}
 
-			fmt.Fprintln(io.Discard, s)
+			_, _ = fmt.Fprintln(io.Discard, s)
 
 			// Get memory after loading
 			runtime.GC()
@@ -137,8 +137,8 @@ func BenchmarkMemoryUsage(b *testing.B) {
 // BenchmarkSessionOperations tests session management performance
 func BenchmarkSessionOperations(b *testing.B) {
 	testDir := filepath.Join(".", "session_benchmark")
-	os.MkdirAll(testDir, 0755)
-	defer os.RemoveAll(testDir)
+	_ = os.MkdirAll(testDir, 0755)
+	defer func() { _ = os.RemoveAll(testDir) }()
 
 	b.Run("Session_Save_Load_Performance", func(b *testing.B) {
 		// Constitutional requirement: Session operations should be fast
@@ -223,8 +223,8 @@ func TestConstitutionalRequirements(t *testing.T) {
 	t.Run("Cross Platform Compatibility", func(t *testing.T) {
 		// Test that the application handles cross-platform file paths and line endings
 		testDir := filepath.Join(".", "cross_platform_test")
-		os.MkdirAll(testDir, 0755)
-		defer os.RemoveAll(testDir)
+		_ = os.MkdirAll(testDir, 0755)
+		defer func() { _ = os.RemoveAll(testDir) }()
 
 		storage := NewFileStorage()
 		config := DefaultSessionConfig()

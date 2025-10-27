@@ -12,7 +12,6 @@ import (
 	"path/filepath"
 
 	"github.com/jessevdk/go-flags"
-
 	"github.com/pashagolub/confelo/pkg/data"
 	"github.com/pashagolub/confelo/pkg/tui"
 	"github.com/pashagolub/confelo/pkg/tui/screens"
@@ -347,7 +346,7 @@ func runInteractiveMode(session *data.Session, config *data.SessionConfig, stora
 
 	// Start the TUI application
 	runErr := tuiApp.Run()
-	
+
 	// Save session on exit (regardless of error)
 	// This ensures progress is saved even if app exits unexpectedly
 	sessionFile := filepath.Join("sessions", data.SanitizeFilename(session.Name)+".json")
@@ -355,7 +354,7 @@ func runInteractiveMode(session *data.Session, config *data.SessionConfig, stora
 		// Log save error but don't override run error
 		fmt.Fprintf(os.Stderr, "Warning: Failed to save session on exit: %v\n", saveErr)
 	}
-	
+
 	return runErr
 }
 

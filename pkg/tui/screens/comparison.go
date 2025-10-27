@@ -425,9 +425,7 @@ func (cs *ComparisonScreen) selectWinner(winner string) {
 	cs.selectedWinner = cs.currentProposals[winnerIndex-1].ID
 
 	// Execute comparison and update ratings
-	if err := cs.executeComparison(); err != nil {
-		// For now just skip to next comparison if there's an error
-	}
+	_ = cs.executeComparison() // Skip to next comparison if there's an error
 
 	// Automatically load next comparison
 	cs.nextComparison()
@@ -488,9 +486,7 @@ func (cs *ComparisonScreen) confirmRanking() {
 	cs.buildRankingsArray()
 
 	// Execute multi-way comparison based on ranking
-	if err := cs.executeMultiWayComparison(); err != nil {
-		// Handle error - for now just continue
-	}
+	_ = cs.executeMultiWayComparison() // Continue on error
 
 	cs.isRanking = false
 	cs.rankings = nil
@@ -685,7 +681,10 @@ func (cs *ComparisonScreen) showCompletionMessage() {
 
 	// Show completion message in the first card (there should be at least one)
 	if len(cs.proposalCards) > 0 {
-		completionText := fmt.Sprintf("[green::b]%s[white::-]\n\n%s\n\n[yellow]Options:[-]\n  [blue]Ctrl+R[-] - View Rankings\n  [blue]Esc[-] - Return to main menu\n  [blue]Ctrl+C[-] - Exit application",
+		completionText := fmt.Sprintf("[green::b]%s[white::-]\n\n%s\n\n[yellow]Options:[-]\n"+
+			"  [blue]Ctrl+R[-] - View Rankings\n"+
+			"  [blue]Esc[-] - Return to main menu\n"+
+			"  [blue]Ctrl+C[-] - Exit application",
 			completionTitle, completionReason)
 		cs.proposalCards[0].SetText(completionText)
 	}
@@ -715,7 +714,7 @@ func (cs *ComparisonScreen) showCompletionMessage() {
 // setComparisonMode changes the comparison method
 func (cs *ComparisonScreen) setComparisonMode(method data.ComparisonMethod) {
 	cs.comparisonMethod = method
-	cs.loadNextComparison()
+	_ = cs.loadNextComparison()
 	cs.updateDisplay()
 }
 

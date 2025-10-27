@@ -76,7 +76,7 @@ func (fs *FileStorage) LoadProposalsFromCSVWithElo(filename string, config CSVCo
 	if err != nil {
 		return nil, fmt.Errorf("%w: cannot open CSV file %s: %v", ErrCSVFormat, filename, err)
 	}
-	defer file.Close()
+	defer func() { _ = file.Close() }()
 
 	return fs.parseCSVFromReader(file, config, eloConfig)
 }
@@ -241,20 +241,64 @@ func (fs *FileStorage) isEmptyRow(row []string) bool {
 }
 
 // parseProposalFromRow creates a Proposal from a CSV row
-func (fs *FileStorage) parseProposalFromRow(row []string, rowNum int, headers []string, idCol, titleCol, speakerCol, abstractCol, scoreCol, conflictCol int, eloConfig *EloConfig) (*Proposal, error) {
+func (fs *FileStorage) parseProposalFromRow(row []string, rowNum int, headers []string,
+	idCol, titleCol, speakerCol, abstractCol, scoreCol, conflictCol int,
+	eloConfig *EloConfig) (*Proposal, error) {
 	// Validate row has enough columns
-	maxCol := fs.maxIndex(idCol, titleCol, speakerCol, abstractCol, scoreCol, conflictCol)
+	if err := fs.validateRowLength(row, rowNum, idCol, titleCol, speakerCol, abstractCol, scoreCol, conflictCol); err != nil {
+		return nil, err
+	}
+
+	// Extract required fields
+	id, title, err := fs.extractRequiredFields(row, rowNum, idCol, titleCol)
+	if err != nil {
+		return nil, err
+	}
+
+	// Extract optional fields
+	speaker, abstract := fs.extractOptionalFields(row, speakerCol, abstractCol)
+
+	// Parse score
+	score, originalScore := fs.parseScore(row, scoreCol, eloConfig)
+
+	// Parse conflict tags
+	conflictTags := fs.parseConflictTags(row, conflictCol)
+
+	// Preserve all metadata
+	metadata := fs.buildMetadata(row, headers)
+
+	now := time.Now()
+	proposal := &Proposal{
+		ID:            id,
+		Title:         title,
+		Abstract:      abstract,
+		Speaker:       speaker,
+		Score:         score,
+		OriginalScore: originalScore,
+		Metadata:      metadata,
+		ConflictTags:  conflictTags,
+		CreatedAt:     now,
+		UpdatedAt:     now,
+	}
+
+	return proposal, nil
+}
+
+func (fs *FileStorage) validateRowLength(row []string, rowNum int, indices ...int) error {
+	maxCol := fs.maxIndex(indices...)
 	if len(row) <= maxCol {
-		return nil, CSVParseError{
+		return CSVParseError{
 			RowNumber: rowNum,
 			Message:   fmt.Sprintf("row has %d columns but needs at least %d", len(row), maxCol+1),
 		}
 	}
+	return nil
+}
 
-	// Extract required fields
+func (fs *FileStorage) extractRequiredFields(row []string, rowNum int, idCol, titleCol int) (string, string, error) {
 	id := strings.TrimSpace(row[idCol])
 	if id == "" {
-		return nil, CSVParseError{
+		return "", "", CSVParseError{
 			RowNumber: rowNum,
 			Field:     "id",
 			Message:   "ID cannot be empty",
@@ -263,14 +307,17 @@ func (fs *FileStorage) parseProposalFromRow(row []string, rowNum int, headers []
 
 	title := strings.TrimSpace(row[titleCol])
 	if title == "" {
-		return nil, CSVParseError{
+		return "", "", CSVParseError{
 			RowNumber: rowNum,
 			Field:     "title",
 			Message:   "title cannot be empty",
 		}
 	}
 
-	// Extract optional fields
+	return id, title, nil
+}
+
+func (fs *FileStorage) extractOptionalFields(row []string, speakerCol, abstractCol int) (string, string) {
 	var speaker, abstract string
 	if speakerCol >= 0 && speakerCol < len(row) {
 		speaker = strings.TrimSpace(row[speakerCol])
@@ -278,21 +325,17 @@ func (fs *FileStorage) parseProposalFromRow(row []string, rowNum int, headers []
 	if abstractCol >= 0 && abstractCol < len(row) {
 		abstract = strings.TrimSpace(row[abstractCol])
 	}
+	return speaker, abstract
+}
 
-	// Parse score
-	var score float64 = 1500.0 // Default from Elo config
+func (fs *FileStorage) parseScore(row []string, scoreCol int, eloConfig *EloConfig) (float64, *float64) {
+	score := 1500.0 // Default from Elo config
 	var originalScore *float64
+
 	if scoreCol >= 0 && scoreCol < len(row) {
 		scoreStr := strings.TrimSpace(row[scoreCol])
 		if scoreStr != "" {
-			parsedScore, err := strconv.ParseFloat(scoreStr, 64)
-			if err != nil {
-				// Invalid score - use default but don't fail
-				score = 1500.0
-				if eloConfig != nil {
-					score = eloConfig.InitialRating
-				}
-			} else {
+			if parsedScore, err := strconv.ParseFloat(scoreStr, 64); err == nil {
 				originalScore = &parsedScore
 				// Convert CSV score to Elo scale if config provided
 				if eloConfig != nil {
@@ -300,6 +343,9 @@ func (fs *FileStorage) parseProposalFromRow(row []string, rowNum int, headers []
 				} else {
 					score = parsedScore
 				}
+			} else if eloConfig != nil {
+				// Invalid score - use default
+				score = eloConfig.InitialRating
 			}
 		} else if eloConfig != nil {
 			score = eloConfig.InitialRating
@@ -308,7 +354,10 @@ func (fs *FileStorage) parseProposalFromRow(row []string, rowNum int, headers []
 		score = eloConfig.InitialRating
 	}
 
-	// Parse conflict tags
+	return score, originalScore
+}
+
+func (fs *FileStorage) parseConflictTags(row []string, conflictCol int) []string {
 	var conflictTags []string
 	if conflictCol >= 0 && conflictCol < len(row) {
 		conflictStr := strings.TrimSpace(row[conflictCol])
@@ -331,8 +380,10 @@ func (fs *FileStorage) parseProposalFromRow(row []string, rowNum int, headers []
 			}
 		}
 	}
+	return conflictTags
+}
 
-	// Preserve all metadata
+func (fs *FileStorage) buildMetadata(row []string, headers []string) map[string]string {
 	metadata := make(map[string]string)
 	for i, value := range row {
 		if i < len(headers) && strings.TrimSpace(value) != "" {
@@ -340,22 +391,7 @@ func (fs *FileStorage) parseProposalFromRow(row []string, rowNum int, headers []
 			metadata[headers[i]] = strings.TrimSpace(value)
 		}
 	}
-
-	now := time.Now()
-	proposal := &Proposal{
-		ID:            id,
-		Title:         title,
-		Abstract:      abstract,
-		Speaker:       speaker,
-		Score:         score,
-		OriginalScore: originalScore, // Preserve original CSV score for export
-		Metadata:      metadata,
-		ConflictTags:  conflictTags,
-		CreatedAt:     now,
-		UpdatedAt:     now,
-	}
-
-	return proposal, nil
+	return metadata
 }
 
 // maxIndex returns the maximum value among the given indices
@@ -375,10 +411,32 @@ func (fs *FileStorage) UpdateCSVScores(proposals []Proposal, filename string, co
 	fs.mu.RLock()
 	defer fs.mu.RUnlock()
 
-	// Read the original CSV file
+	// Read CSV records
+	records, err := fs.readCSVRecords(filename, config)
+	if err != nil {
+		return err
+	}
+
+	// Find column indices
+	colInfo, err := fs.findColumnIndices(records, config)
+	if err != nil {
+		return err
+	}
+
+	// Create score mapping
+	scoreMap := fs.createScoreMap(proposals, eloConfig)
+
+	// Update records with new scores
+	fs.updateRecordsWithScores(records, scoreMap, colInfo.headers, config, colInfo.scoreColIdx, colInfo.startRow)
+
+	// Write updated records back to file
+	return fs.writeCSVRecords(records, filename, config)
+}
+
+func (fs *FileStorage) readCSVRecords(filename string, config CSVConfig) ([][]string, error) {
 	file, err := os.Open(filename)
 	if err != nil {
-		return fmt.Errorf("cannot open CSV file %s: %w", filename, err)
+		return nil, fmt.Errorf("cannot open CSV file %s: %w", filename, err)
 	}
 
 	csvReader := csv.NewReader(file)
@@ -387,36 +445,49 @@ func (fs *FileStorage) UpdateCSVScores(proposals []Proposal, filename string, co
 	}
 
 	records, err := csvReader.ReadAll()
-	file.Close()
+	_ = file.Close()
 	if err != nil {
-		return fmt.Errorf("failed to read CSV: %w", err)
+		return nil, fmt.Errorf("failed to read CSV: %w", err)
 	}
 
 	if len(records) == 0 {
-		return fmt.Errorf("CSV file is empty")
+		return nil, fmt.Errorf("CSV file is empty")
 	}
 
-	// Find score column index
-	var scoreColIdx int = -1
-	var headers []string
-	startRow := 0
+	return records, nil
+}
+
+type columnInfo struct {
+	scoreColIdx int
+	headers     []string
+	startRow    int
+}
+
+func (fs *FileStorage) findColumnIndices(records [][]string, config CSVConfig) (*columnInfo, error) {
+	info := &columnInfo{
+		scoreColIdx: -1,
+		startRow:    0,
+	}
 
 	if config.HasHeader {
-		headers = records[0]
-		startRow = 1
-		for i, header := range headers {
+		info.headers = records[0]
+		info.startRow = 1
+		for i, header := range info.headers {
 			if strings.EqualFold(strings.TrimSpace(header), config.ScoreColumn) {
-				scoreColIdx = i
+				info.scoreColIdx = i
 				break
 			}
 		}
 	}
 
-	if scoreColIdx == -1 {
-		return fmt.Errorf("score column '%s' not found in CSV", config.ScoreColumn)
+	if info.scoreColIdx == -1 {
+		return nil, fmt.Errorf("score column '%s' not found in CSV", config.ScoreColumn)
 	}
 
-	// Create proposal ID to export score map
+	return info, nil
+}
+
+func (fs *FileStorage) createScoreMap(proposals []Proposal, eloConfig *EloConfig) map[string]string {
 	scoreMap := make(map[string]string)
 	for _, proposal := range proposals {
 		var exportScore float64
@@ -433,36 +504,41 @@ func (fs *FileStorage) UpdateCSVScores(proposals []Proposal, filename string, co
 			scoreMap[proposal.ID] = fmt.Sprintf("%.1f", exportScore)
 		}
 	}
+	return scoreMap
+}
 
-	// Update score column for each row
+func (fs *FileStorage) updateRecordsWithScores(records [][]string, scoreMap map[string]string, headers []string, config CSVConfig, scoreColIdx, startRow int) {
 	for rowIdx := startRow; rowIdx < len(records); rowIdx++ {
 		row := records[rowIdx]
 		if len(row) <= scoreColIdx {
 			continue
 		}
 
-		// Find proposal ID (assuming it's in first column or ID column)
-		var proposalID string
-		if config.HasHeader {
-			for i, header := range headers {
-				if strings.EqualFold(strings.TrimSpace(header), config.IDColumn) {
-					if i < len(row) {
-						proposalID = strings.TrimSpace(row[i])
-					}
-					break
-				}
-			}
-		} else if len(row) > 0 {
-			proposalID = strings.TrimSpace(row[0])
-		}
-
-		// Update score if we have a mapping
+		proposalID := fs.findProposalID(row, headers, config)
 		if exportScore, exists := scoreMap[proposalID]; exists {
 			records[rowIdx][scoreColIdx] = exportScore
 		}
 	}
+}
 
-	// Write back to file atomically
+func (fs *FileStorage) findProposalID(row, headers []string, config CSVConfig) string {
+	var proposalID string
+	if config.HasHeader {
+		for i, header := range headers {
+			if strings.EqualFold(strings.TrimSpace(header), config.IDColumn) {
+				if i < len(row) {
+					proposalID = strings.TrimSpace(row[i])
+				}
+				break
+			}
+		}
+	} else if len(row) > 0 {
+		proposalID = strings.TrimSpace(row[0])
+	}
+	return proposalID
+}
+
+func (fs *FileStorage) writeCSVRecords(records [][]string, filename string, config CSVConfig) error {
 	tempFile := filename + ".tmp"
 	outFile, err := os.Create(tempFile)
 	if err != nil {
@@ -475,16 +551,16 @@ func (fs *FileStorage) UpdateCSVScores(proposals []Proposal, filename string, co
 	}
 
 	err = writer.WriteAll(records)
-	outFile.Close()
+	_ = outFile.Close()
 	if err != nil {
-		os.Remove(tempFile)
+		_ = os.Remove(tempFile)
 		return fmt.Errorf("failed to write CSV: %w", err)
 	}
 
 	// Atomic rename
 	if err := os.Rename(tempFile, filename); err != nil {
-		os.Remove(tempFile)
-		return fmt.Errorf("failed to rename temp file: %w", err)
+		_ = os.Remove(tempFile)
+		return fmt.Errorf("failed to rename temporary file: %w", err)
 	}
 
 	return nil
@@ -533,22 +609,22 @@ func (fs *FileStorage) saveSessionAtomic(session *Session, filename string) erro
 	encoder.SetIndent("", "  ") // Pretty print for debugging
 
 	if err := encoder.Encode(session); err != nil {
-		file.Close()
-		os.Remove(tempFile)
+		_ = file.Close()
+		_ = os.Remove(tempFile)
 		return fmt.Errorf("%w: failed to encode session: %v", ErrJSONSerialization, err)
 	}
 
 	if err := file.Sync(); err != nil {
-		file.Close()
-		os.Remove(tempFile)
+		_ = file.Close()
+		_ = os.Remove(tempFile)
 		return fmt.Errorf("%w: failed to sync session file: %v", ErrAtomicWrite, err)
 	}
 
-	file.Close()
+	_ = file.Close()
 
 	// Atomic rename
 	if err := os.Rename(tempFile, filename); err != nil {
-		os.Remove(tempFile)
+		_ = os.Remove(tempFile)
 		return fmt.Errorf("%w: atomic rename failed: %v", ErrAtomicWrite, err)
 	}
 
@@ -561,7 +637,7 @@ func (fs *FileStorage) saveSessionDirect(session *Session, filename string) erro
 	if err != nil {
 		return fmt.Errorf("%w: cannot create session file: %v", ErrJSONSerialization, err)
 	}
-	defer file.Close()
+	defer func() { _ = file.Close() }()
 
 	encoder := json.NewEncoder(file)
 	encoder.SetIndent("", "  ")
@@ -590,7 +666,7 @@ func (fs *FileStorage) loadSessionFromFile(filename string) (*Session, error) {
 		}
 		return nil, fmt.Errorf("%w: cannot open session file: %v", ErrJSONSerialization, err)
 	}
-	defer file.Close()
+	defer func() { _ = file.Close() }()
 
 	var session Session
 	decoder := json.NewDecoder(file)
