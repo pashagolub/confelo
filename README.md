@@ -1,3 +1,8 @@
+[![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](https://opensource.org/licenses/MIT)
+[![Build and Test](https://github.com/pashagolub/confelo/actions/workflows/build.yml/badge.svg)](https://github.com/pashagolub/confelo/actions/workflows/build.yml)
+[![Github All Releases](https://img.shields.io/github/downloads/pashagolub/confelo/total?label=Downloads)](https://github.com/pashagolub/confelo/releases)
+[![Coverage Status](https://coveralls.io/repos/github/pashagolub/confelo/badge.svg?branch=master)](https://coveralls.io/github/pashagolub/confelo?branch=master)
+
 # Confelo - Conference Talk Ranking System
 
 [![Confelo screenshot](confelo.png)](confelo.png)
