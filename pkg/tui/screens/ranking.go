@@ -151,7 +151,7 @@ func (rs *RankingScreen) setupUI() {
 
 // setupTableHeaders configures the ranking table headers
 func (rs *RankingScreen) setupTableHeaders() {
-	headers := []string{"Rank", "Elo", "Score", "Confidence", "Title", "Speaker"}
+	headers := []string{"Rank", "Elo", "Score", "Comparisons", "Confidence", "Title", "Speaker"}
 	for col, header := range headers {
 		cell := tview.NewTableCell(header).
 			SetTextColor(tcell.ColorYellow).
@@ -298,6 +298,15 @@ func (rs *RankingScreen) hasSimilarScores(proposal data.Proposal, threshold floa
 	}
 	// If 2+ other proposals have similar scores, consider it a tie
 	return similarCount >= 2
+}
+
+// getComparisonCount gets the number of comparisons for a proposal
+func (rs *RankingScreen) getComparisonCount(proposalID string) int {
+	// Try to get comparison count from the app's session data
+	if appInterface, ok := rs.app.(interface{ GetComparisonCount(proposalID string) int }); ok {
+		return appInterface.GetComparisonCount(proposalID)
+	}
+	return 0
 }
 
 // calculateExportScore converts an Elo score to the export scale
@@ -476,23 +485,41 @@ func (rs *RankingScreen) addProposalRow(row int, proposal data.Proposal) {
 			SetAlign(tview.AlignCenter).
 			SetTextColor(scoreColor)) // Use same color as regular score
 
+	// Comparisons count - helps users understand confidence
+	comparisonCount := rs.getComparisonCount(proposal.ID)
+	comparisonText := strconv.Itoa(comparisonCount)
+	// Color code by comparison count: low=red, medium=yellow, high=green
+	var comparisonColor tcell.Color
+	switch {
+	case comparisonCount >= 5:
+		comparisonColor = tcell.ColorGreen
+	case comparisonCount >= 3:
+		comparisonColor = tcell.ColorYellow
+	default:
+		comparisonColor = tcell.ColorRed
+	}
+	rs.rankingTable.SetCell(row, 3,
+		tview.NewTableCell(comparisonText).
+			SetAlign(tview.AlignCenter).
+			SetTextColor(comparisonColor))
+
 	// Confidence indicator
 	confidence := rs.calculateConfidence(proposal)
 	confidenceText := fmt.Sprintf("%.0f%%", confidence)
 	confidenceColor := rs.getConfidenceColor(confidence)
-	rs.rankingTable.SetCell(row, 3,
+	rs.rankingTable.SetCell(row, 4,
 		tview.NewTableCell(confidenceText).
 			SetAlign(tview.AlignCenter).
 			SetTextColor(confidenceColor))
 
 	// Title (truncated if too long)
-	rs.rankingTable.SetCell(row, 4,
+	rs.rankingTable.SetCell(row, 5,
 		tview.NewTableCell(proposal.Title).
 			SetAlign(tview.AlignLeft).
 			SetTextColor(tcell.ColorWhite))
 
 	// Speaker
-	rs.rankingTable.SetCell(row, 5,
+	rs.rankingTable.SetCell(row, 6,
 		tview.NewTableCell(proposal.Speaker).
 			SetAlign(tview.AlignLeft).
 			SetTextColor(tcell.ColorLightBlue))

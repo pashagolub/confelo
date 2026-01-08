@@ -546,7 +546,7 @@ func TestCompleteWorkflowNoJSONLIntegration(t *testing.T) {
 
 			// Simulate user picking winner (alternate winners)
 			winner := compPair[0]
-			if len(session.CompletedComparisons)%2 == 1 {
+			if len(session.CompletedComparisonIDs)%2 == 1 {
 				winner = compPair[1]
 			}
 
@@ -585,9 +585,93 @@ func TestCompleteWorkflowNoJSONLIntegration(t *testing.T) {
 		loadedSession, err := LoadSession(session.Name, tempDir)
 		require.NoError(t, err)
 		assert.Equal(t, session.Name, loadedSession.Name)
-		assert.Len(t, loadedSession.CompletedComparisons, 0) // Comparisons are not persisted		// CONTRACT: Loaded session should not have audit trail after journal removal
+		assert.Len(t, loadedSession.CompletedComparisonIDs, 5) // Comparison IDs are persisted (lightweight)
+		// CONTRACT: Loaded session should not have audit trail after journal removal
 		// Note: auditTrail field was successfully removed, so this contract is fulfilled
 
 		t.Log("Integration test completed successfully")
 	})
+}
+
+// TestExportScaleWithActualMinMax verifies that export scores use actual min/max from proposals
+// rather than static config min/max values (regression test for the "all scores are 5" bug)
+func TestExportScaleWithActualMinMax(t *testing.T) {
+	// Create temporary directory
+	tempDir := t.TempDir()
+
+	// Create test CSV with proposals
+	csvFile := filepath.Join(tempDir, "proposals.csv")
+	csvContent := `id,title,speaker,score
+1,Proposal A,Alice,5
+2,Proposal B,Bob,5
+3,Proposal C,Charlie,5
+4,Proposal D,Diana,5
+5,Proposal E,Eve,5
+`
+	err := os.WriteFile(csvFile, []byte(csvContent), 0644)
+	require.NoError(t, err)
+
+	// Create config with 1-9 scale (like the user reported)
+	config := DefaultSessionConfig()
+	config.Elo.OutputMin = 1.0
+	config.Elo.OutputMax = 9.0
+	config.Elo.UseDecimals = false
+	config.Elo.InitialRating = 1500.0
+
+	// Create storage
+	storage := NewFileStorage()
+
+	// Load proposals
+	result, err := storage.LoadProposalsFromCSV(csvFile, config.CSV)
+	require.NoError(t, err)
+	require.Len(t, result.Proposals, 5)
+
+	// Simulate some comparisons to create score differences
+	// In real usage, the Elo engine would do this
+	result.Proposals[0].Score = 1600.0 // Higher score
+	result.Proposals[1].Score = 1550.0
+	result.Proposals[2].Score = 1500.0 // Middle
+	result.Proposals[3].Score = 1450.0
+	result.Proposals[4].Score = 1400.0 // Lower score
+
+	// Export scores
+	err = storage.UpdateCSVScores(result.Proposals, csvFile, config.CSV, &config.Elo)
+	require.NoError(t, err)
+
+	// Read the exported CSV
+	updatedContent, err := os.ReadFile(csvFile)
+	require.NoError(t, err)
+
+	lines := strings.Split(string(updatedContent), "\n")
+	require.GreaterOrEqual(t, len(lines), 6) // header + 5 proposals
+
+	// Parse scores from CSV
+	scores := make([]string, 0, 5)
+	for i := 1; i <= 5; i++ {
+		parts := strings.Split(lines[i], ",")
+		require.GreaterOrEqual(t, len(parts), 4, "line %d should have at least 4 columns", i)
+		scores = append(scores, parts[3])
+	}
+
+	// Verify scores are different (NOT all 5)
+	// With actual min/max scaling:
+	// - 1400 (min) → 1
+	// - 1450 → ~3
+	// - 1500 (middle) → 5
+	// - 1550 → ~7
+	// - 1600 (max) → 9
+	assert.Equal(t, "9", scores[0], "Highest score should map to 9")
+	assert.Equal(t, "7", scores[1], "Second highest should be ~7")
+	assert.Equal(t, "5", scores[2], "Middle score should be 5")
+	assert.Equal(t, "3", scores[3], "Second lowest should be ~3")
+	assert.Equal(t, "1", scores[4], "Lowest score should map to 1")
+
+	// Verify they're NOT all the same
+	uniqueScores := make(map[string]bool)
+	for _, score := range scores {
+		uniqueScores[score] = true
+	}
+	assert.Greater(t, len(uniqueScores), 1, "Should have different scores, not all the same")
+
+	t.Log("Export scale test passed - scores correctly use actual min/max")
 }

@@ -1,10 +1,13 @@
+package screens
+
 // Package screens provides TUI screen implementations for conference talk ranking.
 // This file implements the comparison screen interface where users perform
 // pairwise and multi-way comparisons between proposals.
-package screens
 
 import (
+	"errors"
 	"fmt"
+	"math"
 	"sort"
 	"strconv"
 	"strings"
@@ -15,6 +18,16 @@ import (
 
 	"github.com/pashagolub/confelo/pkg/data"
 	"github.com/pashagolub/confelo/pkg/elo"
+)
+
+// Sentinel errors for expected completion scenarios
+var (
+	// ErrRankingConverged indicates that the ranking has stabilized and no more comparisons are needed
+	ErrRankingConverged = errors.New("ranking has converged")
+	// ErrNoMoreComparisons indicates that all possible comparisons have been completed
+	ErrNoMoreComparisons = errors.New("no more comparisons available")
+	// ErrMaxComparisonsReached indicates that the maximum comparison limit has been reached
+	ErrMaxComparisonsReached = errors.New("maximum comparison limit reached")
 )
 
 // ComparisonScreen implements the comparison interface for ranking proposals
@@ -219,8 +232,19 @@ func (cs *ComparisonScreen) OnEnter(app any) error {
 	}
 
 	// Load proposals for comparison
+	// If loading fails (e.g., due to convergence or completion), show completion message
+	// This allows users to explore rankings and export data even when voting is complete
 	if err := cs.loadNextComparison(); err != nil {
-		return fmt.Errorf("failed to load comparison: %w", err)
+		// Check if this is an expected completion/convergence error using errors.Is()
+		if errors.Is(err, ErrRankingConverged) ||
+			errors.Is(err, ErrNoMoreComparisons) ||
+			errors.Is(err, ErrMaxComparisonsReached) {
+			// Expected completion - show friendly completion message
+			cs.showCompletionMessage()
+		} else {
+			// Unexpected error - show error to user and return
+			return fmt.Errorf("failed to load comparison: %w", err)
+		}
 	}
 
 	cs.updateDisplay()
@@ -306,13 +330,13 @@ func (cs *ComparisonScreen) loadNextComparison() error {
 		// Check if we've reached minimum comparisons and convergence is achieved
 		if completed >= config.Convergence.MinComparisons {
 			if cs.checkTopTConvergence() {
-				return fmt.Errorf("ranking has converged - top %d proposals are stable", config.Convergence.TargetAccepted)
+				return fmt.Errorf("%w: top %d proposals are stable", ErrRankingConverged, config.Convergence.TargetAccepted)
 			}
 		}
 
 		// Hard limit check
 		if completed >= config.Convergence.MaxComparisons {
-			return fmt.Errorf("maximum comparison limit reached (%d)", config.Convergence.MaxComparisons)
+			return fmt.Errorf("%w: %d comparisons completed", ErrMaxComparisonsReached, config.Convergence.MaxComparisons)
 		}
 	}
 
@@ -336,9 +360,9 @@ func (cs *ComparisonScreen) loadNextComparison() error {
 	}
 
 	// Find next uncompared pair/group of proposals
-	nextProposals := cs.findNextComparison(proposals, count, session.CompletedComparisons)
+	nextProposals := cs.findNextComparison(proposals, count, session.CompletedComparisonIDs)
 	if nextProposals == nil {
-		return fmt.Errorf("no more comparisons available")
+		return ErrNoMoreComparisons
 	}
 
 	cs.currentProposals = nextProposals
@@ -351,38 +375,92 @@ func (cs *ComparisonScreen) loadNextComparison() error {
 }
 
 // findNextComparison finds the next set of proposals that haven't been compared yet
-func (cs *ComparisonScreen) findNextComparison(proposals []data.Proposal, count int, completed []data.Comparison) []data.Proposal {
+// Prioritizes proposals with fewer comparisons to ensure even distribution
+func (cs *ComparisonScreen) findNextComparison(proposals []data.Proposal, count int, completed [][]string) []data.Proposal {
 	// Create a set of completed comparisons for quick lookup
 	completedSet := make(map[string]bool)
-	for _, comp := range completed {
+	for _, proposalIDs := range completed {
 		// Create a sorted key from proposal IDs
-		key := cs.createComparisonKey(comp.ProposalIDs)
+		key := cs.createComparisonKey(proposalIDs)
 		completedSet[key] = true
 	}
 
-	// For pairwise comparisons, find next uncompleted pair
+	// Get session to access comparison counts
+	session := cs.getSession()
+	if session == nil {
+		return nil
+	}
+
+	// Create sorted list of proposals by comparison count (ascending)
+	// This helps us prioritize less-compared proposals
+	type proposalWithCount struct {
+		proposal data.Proposal
+		count    int
+	}
+
+	proposalCounts := make([]proposalWithCount, len(proposals))
+	for i, prop := range proposals {
+		proposalCounts[i] = proposalWithCount{
+			proposal: prop,
+			count:    cs.getProposalComparisonCount(prop.ID, session),
+		}
+	}
+
+	// Sort by count (ascending) - proposals with fewer comparisons first
+	sort.Slice(proposalCounts, func(i, j int) bool {
+		return proposalCounts[i].count < proposalCounts[j].count
+	})
+
+	// For pairwise comparisons, prioritize pairing low-comparison proposals
 	if count == 2 {
-		for i := 0; i < len(proposals); i++ {
-			for j := i + 1; j < len(proposals); j++ {
-				proposalIDs := []string{proposals[i].ID, proposals[j].ID}
+		// First, try to find uncompleted pairs starting with least-compared proposals
+		for i := 0; i < len(proposalCounts); i++ {
+			for j := i + 1; j < len(proposalCounts); j++ {
+				proposalIDs := []string{proposalCounts[i].proposal.ID, proposalCounts[j].proposal.ID}
 				key := cs.createComparisonKey(proposalIDs)
 
 				if !completedSet[key] {
-					return []data.Proposal{proposals[i], proposals[j]}
+					return []data.Proposal{proposalCounts[i].proposal, proposalCounts[j].proposal}
 				}
 			}
 		}
 	}
 
-	// For multi-way comparisons (trio, quartet), implement similar logic
-	// For now, just use a simple round-robin approach
+	// For multi-way comparisons (trio, quartet), prioritize including less-compared proposals
 	if count > 2 {
-		// Simple implementation: take next sequential group
-		startIdx := len(completed) % (len(proposals) - count + 1)
-		if startIdx+count <= len(proposals) {
-			result := make([]data.Proposal, count)
-			copy(result, proposals[startIdx:startIdx+count])
-			return result
+		// Try to form groups that include proposals with fewer comparisons
+		// Start by trying groups that include the least-compared proposals
+		for startPos := 0; startPos <= len(proposalCounts)-count; startPos++ {
+			// Try different combinations prioritizing less-compared proposals
+			for offset := 0; offset <= len(proposalCounts)-count; offset++ {
+				if startPos+offset+count > len(proposalCounts) {
+					break
+				}
+
+				// Build a candidate group
+				candidate := make([]data.Proposal, count)
+				ids := make([]string, count)
+
+				// Include at least one from the least-compared proposals
+				candidate[0] = proposalCounts[startPos].proposal
+				ids[0] = candidate[0].ID
+
+				// Fill the rest
+				for i := 1; i < count; i++ {
+					idx := startPos + offset + i
+					if idx >= len(proposalCounts) {
+						idx = idx % len(proposalCounts)
+					}
+					candidate[i] = proposalCounts[idx].proposal
+					ids[i] = candidate[i].ID
+				}
+
+				// Check if this combination hasn't been done yet
+				key := cs.createComparisonKey(ids)
+				if !completedSet[key] {
+					return candidate
+				}
+			}
 		}
 	}
 
@@ -615,18 +693,8 @@ func (cs *ComparisonScreen) executeMultiWayComparison() error {
 		}
 	}
 
-	// Record the comparison
-	comparison := data.Comparison{
-		ID:          cs.generateComparisonID(),
-		SessionName: session.Name,
-		ProposalIDs: cs.getProposalIDs(),
-		WinnerID:    cs.rankings[0], // First in ranking is winner
-		Rankings:    cs.rankings,
-		Method:      cs.comparisonMethod,
-		Timestamp:   time.Now(),
-	}
-
-	session.CompletedComparisons = append(session.CompletedComparisons, comparison)
+	// Record the comparison IDs for duplicate detection
+	session.CompletedComparisonIDs = append(session.CompletedComparisonIDs, cs.getProposalIDs())
 
 	// Update lightweight comparison tracking for progress and confidence
 	session.TotalComparisons++
@@ -677,6 +745,11 @@ func (cs *ComparisonScreen) showCompletionMessage() {
 	} else {
 		completionTitle = "🎉 All Comparisons Complete!"
 		completionReason = "All possible comparisons have been finished."
+	}
+
+	// Ensure we have at least 2 proposal cards for displaying completion message
+	if len(cs.proposalCards) < 2 {
+		cs.setupProposalCards(2)
 	}
 
 	// Show completion message in the first card (there should be at least one)
@@ -733,8 +806,6 @@ func (cs *ComparisonScreen) executeComparison() error {
 		MaxRating:     3000.0,
 	}
 
-	startTime := time.Now()
-
 	// For pairwise comparison, just do a simple rating swap
 	if cs.comparisonMethod == data.MethodPairwise && len(cs.currentProposals) == 2 {
 		winnerIdx := 0
@@ -772,18 +843,8 @@ func (cs *ComparisonScreen) executeComparison() error {
 	}
 
 	// Record completed comparison
-	comparison := data.Comparison{
-		ID:          cs.generateComparisonID(),
-		SessionName: session.Name,
-		ProposalIDs: cs.getProposalIDs(),
-		WinnerID:    cs.selectedWinner,
-		Rankings:    cs.rankings,
-		Method:      cs.comparisonMethod,
-		Timestamp:   time.Now(),
-		Duration:    time.Since(startTime),
-	}
-
-	session.CompletedComparisons = append(session.CompletedComparisons, comparison)
+	// Record the comparison IDs for duplicate detection
+	session.CompletedComparisonIDs = append(session.CompletedComparisonIDs, cs.getProposalIDs())
 
 	// Update lightweight comparison tracking for progress and confidence
 	session.TotalComparisons++
@@ -907,25 +968,37 @@ func (cs *ComparisonScreen) checkTopTConvergence() bool {
 
 			// Require significant rating gap
 			if ratingGap > config.Convergence.StabilityThreshold {
-				// Additional check: ensure top-T proposals have enough individual comparisons
-				// This ensures confidence levels are reasonable (aim for ~70%+ confidence)
-				// With trio mode, we want each top proposal to participate in 4-5 comparisons
-				// Using logarithmic confidence: 100 * (1 - e^(-count/5))
-				// 4 comparisons → ~55% confidence, 5 comparisons → ~63% confidence
-				minIndividualComparisons := 4 // Increased for better confidence levels
-				if cs.comparisonMethod == data.MethodQuartet {
-					minIndividualComparisons = 3 // Quartet is more efficient, can use lower minimum
+				// Calculate average confidence for top-T proposals
+				topProposals := sortedProposals[:config.Convergence.TargetAccepted]
+				averageConfidence := cs.calculateAverageTopConfidence(topProposals, session)
+
+				// CRITICAL: Do not declare convergence if average confidence is below threshold
+				// This prevents premature convergence when proposals haven't been compared enough
+				minConfidenceThreshold := config.Convergence.ConfidenceThreshold
+				if minConfidenceThreshold == 0 {
+					minConfidenceThreshold = 0.6 // Default to 60% if not configured
 				}
+
+				if averageConfidence < minConfidenceThreshold {
+					// Confidence too low - need more comparisons
+					return false
+				}
+
+				// Additional check: ensure NO top-T proposal has extremely low confidence
+				// Even if average is good, we don't want outliers with very few comparisons
+				minIndividualConfidence := 0.5 // At least 50% confidence per proposal
+				totalProposals := len(session.Proposals)
+
 				for i := 0; i < config.Convergence.TargetAccepted; i++ {
 					proposalID := sortedProposals[i].ID
-					individualCount := cs.getProposalComparisonCount(proposalID, session)
-					if individualCount < minIndividualComparisons {
-						// Top proposal doesn't have enough individual comparisons yet
-						// This ensures confidence will be ≥55% (trio) or ≥45% (quartet)
+					confidence := cs.calculateProposalConfidence(proposalID, session, totalProposals)
+					if confidence < minIndividualConfidence {
+						// This top proposal has too few comparisons
 						return false
 					}
 				}
-				// All conditions met: rating gap + individual participation
+
+				// All conditions met: rating gap + good average confidence + no outliers
 				return true
 			}
 		}
@@ -962,9 +1035,44 @@ func (cs *ComparisonScreen) getProposalComparisonCount(proposalID string, sessio
 	return 0
 }
 
-// generateComparisonID creates a unique ID for a comparison
-func (cs *ComparisonScreen) generateComparisonID() string {
-	return fmt.Sprintf("comp_%d", time.Now().UnixNano())
+// calculateProposalConfidence calculates confidence for a proposal based on comparison count
+func (cs *ComparisonScreen) calculateProposalConfidence(proposalID string, session *data.Session, totalProposals int) float64 {
+	count := cs.getProposalComparisonCount(proposalID, session)
+
+	// Target comparisons based on dataset size
+	var targetComparisons float64
+	switch {
+	case totalProposals <= 5:
+		targetComparisons = 2.5
+	case totalProposals <= 20:
+		targetComparisons = 4.5
+	case totalProposals <= 50:
+		targetComparisons = 7.0
+	default:
+		targetComparisons = 10.0
+	}
+
+	// Calculate confidence using exponential approach
+	// confidence = 1 - e^(-count/target)
+	confidence := 1.0 - math.Exp(-float64(count)/targetComparisons)
+	return confidence
+}
+
+// calculateAverageTopConfidence calculates average confidence for top-T proposals
+func (cs *ComparisonScreen) calculateAverageTopConfidence(topProposals []data.Proposal, session *data.Session) float64 {
+	if len(topProposals) == 0 {
+		return 0.0
+	}
+
+	totalProposals := len(session.Proposals)
+	var totalConfidence float64
+
+	for _, prop := range topProposals {
+		confidence := cs.calculateProposalConfidence(prop.ID, session, totalProposals)
+		totalConfidence += confidence
+	}
+
+	return totalConfidence / float64(len(topProposals))
 }
 
 // getProposalIDs returns the IDs of current proposals
@@ -1125,7 +1233,8 @@ func (cs *ComparisonScreen) updateProgress() {
 			convergencePercent = 100
 		}
 
-		// Calculate stability: what % of ALL proposals (not just top-T) meet criteria
+		// Calculate stability: what % of top-T proposals have confidence ≥ 50%
+		// This directly reflects how confident we are about the top rankings
 		stabilityProgress := 0.0
 		if completed >= config.Convergence.MinComparisons {
 			// Count how many proposals meet the stability criteria
@@ -1140,12 +1249,12 @@ func (cs *ComparisonScreen) updateProgress() {
 			// This prevents showing 67% when we only have 3 proposals
 			targetTop := min(config.Convergence.TargetAccepted, len(sortedProposals))
 
-			// Adjust minimum comparisons based on dataset size and method
-			minIndividualComparisons := cs.calculateMinComparisonsForConfidence(totalProposals)
-
+			// Count how many top-T proposals have confidence ≥ 50%
+			// This is more accurate than just counting comparisons
 			for i := range targetTop {
 				proposalID := sortedProposals[i].ID
-				if cs.getProposalComparisonCount(proposalID, session) >= minIndividualComparisons {
+				confidence := cs.calculateProposalConfidence(proposalID, session, totalProposals)
+				if confidence >= 0.5 {
 					stableCount++
 				}
 			}

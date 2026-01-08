@@ -248,7 +248,7 @@ func TestComparisonManagement(t *testing.T) {
 		// Should add to history
 		history := session.GetComparisonHistory()
 		assert.Len(t, history, 1)
-		assert.Equal(t, comparison.ID, history[0].ID)
+		assert.Equal(t, []string{"prop1", "prop2"}, history[0])
 	})
 
 	t.Run("Start trio comparison", func(t *testing.T) {
@@ -354,9 +354,8 @@ func TestEloIntegration(t *testing.T) {
 		history := session.GetComparisonHistory()
 		assert.Len(t, history, 1)
 
-		// Verify Elo updates were recorded
-		comparison := history[0]
-		assert.Len(t, comparison.EloUpdates, 2)
+		// Verify comparison IDs were recorded
+		assert.Equal(t, []string{"prop1", "prop2"}, history[0])
 	})
 
 	t.Run("Process multi-proposal comparison", func(t *testing.T) {

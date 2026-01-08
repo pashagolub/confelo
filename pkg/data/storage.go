@@ -489,10 +489,27 @@ func (fs *FileStorage) findColumnIndices(records [][]string, config CSVConfig) (
 
 func (fs *FileStorage) createScoreMap(proposals []Proposal, eloConfig *EloConfig) map[string]string {
 	scoreMap := make(map[string]string)
+
+	// Calculate actual min/max from proposals for proper scaling
+	var actualMinScore, actualMaxScore float64
+	if len(proposals) > 0 {
+		actualMinScore = proposals[0].Score
+		actualMaxScore = proposals[0].Score
+		for _, proposal := range proposals {
+			if proposal.Score < actualMinScore {
+				actualMinScore = proposal.Score
+			}
+			if proposal.Score > actualMaxScore {
+				actualMaxScore = proposal.Score
+			}
+		}
+	}
+
 	for _, proposal := range proposals {
 		var exportScore float64
 		if eloConfig != nil {
-			exportScore = eloConfig.CalculateExportScore(proposal.Score)
+			// Use actual min/max for proper scaling
+			exportScore = eloConfig.CalculateExportScoreWithRange(proposal.Score, actualMinScore, actualMaxScore)
 		} else {
 			exportScore = proposal.Score
 		}

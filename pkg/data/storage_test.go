@@ -340,15 +340,15 @@ func TestFileStorage_ConcurrentOperations(t *testing.T) {
 			go func(id int) {
 				// Create a new session instead of copying to avoid lock value copy
 				testSession := &Session{
-					Name:                 fmt.Sprintf("session-%d", id),
-					Status:               session.Status,
-					CreatedAt:            session.CreatedAt,
-					UpdatedAt:            time.Now(),
-					Proposals:            session.Proposals,
-					CompletedComparisons: session.CompletedComparisons,
-					ConvergenceMetrics:   session.ConvergenceMetrics,
-					MatchupHistory:       session.MatchupHistory,
-					RatingBins:           session.RatingBins,
+					Name:                   fmt.Sprintf("session-%d", id),
+					Status:                 session.Status,
+					CreatedAt:              session.CreatedAt,
+					UpdatedAt:              time.Now(),
+					Proposals:              session.Proposals,
+					CompletedComparisonIDs: session.CompletedComparisonIDs,
+					ConvergenceMetrics:     session.ConvergenceMetrics,
+					MatchupHistory:         session.MatchupHistory,
+					RatingBins:             session.RatingBins,
 				}
 				done <- fs.SaveSession(testSession, fmt.Sprintf("%s-%d", sessionPath, id))
 			}(i)
