@@ -1,7 +1,8 @@
+package data
+
 // Package data provides session management functionality for conference talk ranking.
 // It implements session state persistence, comparison tracking, and integration
 // with the Elo rating engine for seamless rating updates and convergence tracking.
-package data
 
 import (
 	"crypto/rand"
@@ -94,10 +95,10 @@ type Session struct {
 	InputCSVPath   string             `json:"input_csv_path"`  // Original input CSV file path for export
 
 	// Comparison tracking (lightweight persistence for progress/confidence)
-	ComparisonCounts     map[string]int   `json:"comparison_counts"` // Per-proposal comparison count for confidence
-	TotalComparisons     int              `json:"total_comparisons"` // Total comparisons performed for progress
-	CurrentComparison    *ComparisonState `json:"-"`                 // Active comparison state (not persisted)
-	CompletedComparisons []Comparison     `json:"-"`                 // Historical comparisons (not persisted)
+	ComparisonCounts       map[string]int   `json:"comparison_counts"`        // Per-proposal comparison count for confidence
+	TotalComparisons       int              `json:"total_comparisons"`        // Total comparisons performed for progress
+	CurrentComparison      *ComparisonState `json:"-"`                        // Active comparison state (not persisted)
+	CompletedComparisonIDs [][]string       `json:"completed_comparison_ids"` // Proposal IDs from completed comparisons (lightweight)
 
 	// Analytics and optimization
 	ConvergenceMetrics *ConvergenceMetrics `json:"convergence_metrics"` // Progress tracking
@@ -216,22 +217,22 @@ func NewSession(name string, proposals []Proposal, config SessionConfig, inputCS
 	}
 
 	session := &Session{
-		Name:                 name,
-		Status:               StatusCreated,
-		CreatedAt:            now,
-		UpdatedAt:            now,
-		Config:               config,
-		Proposals:            proposals,
-		ProposalIndex:        proposalIndex,
-		InputCSVPath:         inputCSVPath, // Store CSV path for reload on resume
-		ComparisonCounts:     make(map[string]int),
-		TotalComparisons:     0,
-		CurrentComparison:    nil,
-		CompletedComparisons: make([]Comparison, 0),
-		ConvergenceMetrics:   convergenceMetrics,
-		MatchupHistory:       make([]MatchupHistory, 0),
-		RatingBins:           make([]RatingBin, 0),
-		storageDirectory:     "./sessions", // Default storage directory
+		Name:                   name,
+		Status:                 StatusCreated,
+		CreatedAt:              now,
+		UpdatedAt:              now,
+		Config:                 config,
+		Proposals:              proposals,
+		ProposalIndex:          proposalIndex,
+		InputCSVPath:           inputCSVPath, // Store CSV path for reload on resume
+		ComparisonCounts:       make(map[string]int),
+		TotalComparisons:       0,
+		CurrentComparison:      nil,
+		CompletedComparisonIDs: make([][]string, 0),
+		ConvergenceMetrics:     convergenceMetrics,
+		MatchupHistory:         make([]MatchupHistory, 0),
+		RatingBins:             make([]RatingBin, 0),
+		storageDirectory:       "./sessions", // Default storage directory
 	}
 
 	// Initialize rating bins
@@ -525,8 +526,14 @@ func (s *Session) completeComparisonInternal(winnerID string, rankings []string,
 		}
 	}
 
-	// Add to completed comparisons
-	s.CompletedComparisons = append(s.CompletedComparisons, *comparison)
+	// Add to completed comparisons IDs for duplicate detection
+	s.CompletedComparisonIDs = append(s.CompletedComparisonIDs, comparison.ProposalIDs)
+
+	// Update comparison counts for each proposal
+	for _, proposalID := range comparison.ProposalIDs {
+		s.ComparisonCounts[proposalID]++
+	}
+	s.TotalComparisons++
 
 	// Clear current comparison
 	s.CurrentComparison = nil
@@ -596,14 +603,17 @@ func (s *Session) GetCurrentComparison() *ComparisonState {
 	return comparison
 }
 
-// GetComparisonHistory returns all completed comparisons (thread-safe copy)
-func (s *Session) GetComparisonHistory() []Comparison {
+// GetComparisonHistory returns all completed comparison IDs (thread-safe copy)
+func (s *Session) GetComparisonHistory() [][]string {
 	s.mutex.RLock()
 	defer s.mutex.RUnlock()
 
 	// Return a deep copy to prevent external modifications
-	history := make([]Comparison, len(s.CompletedComparisons))
-	copy(history, s.CompletedComparisons)
+	history := make([][]string, len(s.CompletedComparisonIDs))
+	for i, ids := range s.CompletedComparisonIDs {
+		history[i] = make([]string, len(ids))
+		copy(history[i], ids)
+	}
 	return history
 }
 
@@ -639,62 +649,17 @@ func (s *Session) updateConvergenceMetrics() {
 		return
 	}
 
-	s.ConvergenceMetrics.TotalComparisons = len(s.CompletedComparisons)
+	s.ConvergenceMetrics.TotalComparisons = len(s.CompletedComparisonIDs)
 	s.ConvergenceMetrics.LastCalculated = time.Now()
 
 	// Perform full convergence calculations
 	s.calculateConvergenceMetrics()
 }
 
-// AddEloUpdate records a rating change from a comparison
+// AddEloUpdate records a rating change and updates proposal ratings
 func (s *Session) AddEloUpdate(comparisonID, proposalID string, oldRating, newRating float64, kFactor int) error {
 	s.mutex.Lock()
 	defer s.mutex.Unlock()
-
-	// Find the comparison
-	var targetComparison *Comparison
-	for i := range s.CompletedComparisons {
-		if s.CompletedComparisons[i].ID == comparisonID {
-			targetComparison = &s.CompletedComparisons[i]
-			break
-		}
-	}
-
-	if targetComparison == nil {
-		return fmt.Errorf("comparison not found: %s", comparisonID)
-	}
-
-	// Verify proposal is part of this comparison
-	proposalFound := false
-	for _, id := range targetComparison.ProposalIDs {
-		if id == proposalID {
-			proposalFound = true
-			break
-		}
-	}
-	if !proposalFound {
-		return fmt.Errorf("proposal %s not part of comparison %s", proposalID, comparisonID)
-	}
-
-	// Generate update ID
-	updateID, err := generateUpdateID()
-	if err != nil {
-		return fmt.Errorf("failed to generate update ID: %w", err)
-	}
-
-	// Create EloUpdate
-	eloUpdate := EloUpdate{
-		ID:           updateID,
-		ComparisonID: comparisonID,
-		ProposalID:   proposalID,
-		OldRating:    oldRating,
-		NewRating:    newRating,
-		RatingDelta:  newRating - oldRating,
-		KFactor:      kFactor,
-	}
-
-	// Add to comparison's update list
-	targetComparison.EloUpdates = append(targetComparison.EloUpdates, eloUpdate)
 
 	// Update the proposal's rating
 	if idx, exists := s.ProposalIndex[proposalID]; exists {
@@ -703,9 +668,10 @@ func (s *Session) AddEloUpdate(comparisonID, proposalID string, oldRating, newRa
 	}
 
 	// Update convergence metrics with new rating change
+	ratingDelta := newRating - oldRating
 	if s.ConvergenceMetrics != nil {
 		// Add to recent rating changes (keep last 10)
-		s.ConvergenceMetrics.RecentRatingChanges = append(s.ConvergenceMetrics.RecentRatingChanges, eloUpdate.RatingDelta)
+		s.ConvergenceMetrics.RecentRatingChanges = append(s.ConvergenceMetrics.RecentRatingChanges, ratingDelta)
 		if len(s.ConvergenceMetrics.RecentRatingChanges) > 10 {
 			s.ConvergenceMetrics.RecentRatingChanges = s.ConvergenceMetrics.RecentRatingChanges[1:]
 		}
@@ -880,15 +846,6 @@ func (s *Session) calculateConvergenceMetrics() {
 	metrics.RankingStability = 0.0 // Placeholder
 }
 
-// generateUpdateID creates a unique identifier for an Elo update
-func generateUpdateID() (string, error) {
-	randomBytes := make([]byte, 6)
-	if _, err := rand.Read(randomBytes); err != nil {
-		return "", err
-	}
-	return fmt.Sprintf("upd_%s", hex.EncodeToString(randomBytes)), nil
-}
-
 // ListSessions returns all available session names in the storage directory
 func ListSessions(storageDir string) ([]string, error) {
 	if _, err := os.Stat(storageDir); os.IsNotExist(err) {
@@ -964,12 +921,12 @@ func GetSessionInfo(sessionName, storageDir string) (*SessionInfo, error) {
 
 	// Parse just the fields we need
 	var partial struct {
-		Name                 string     `json:"name"`
-		Status               string     `json:"status"`
-		CreatedAt            time.Time  `json:"created_at"`
-		UpdatedAt            time.Time  `json:"updated_at"`
-		Proposals            []struct{} `json:"proposals"`
-		CompletedComparisons []struct{} `json:"completed_comparisons"`
+		Name                   string     `json:"name"`
+		Status                 string     `json:"status"`
+		CreatedAt              time.Time  `json:"created_at"`
+		UpdatedAt              time.Time  `json:"updated_at"`
+		Proposals              []struct{} `json:"proposals"`
+		CompletedComparisonIDs [][]string `json:"completed_comparison_ids"`
 	}
 
 	if err := json.Unmarshal(data, &partial); err != nil {
@@ -982,7 +939,7 @@ func GetSessionInfo(sessionName, storageDir string) (*SessionInfo, error) {
 		CreatedAt:       partial.CreatedAt,
 		UpdatedAt:       partial.UpdatedAt,
 		ProposalCount:   len(partial.Proposals),
-		ComparisonCount: len(partial.CompletedComparisons),
+		ComparisonCount: len(partial.CompletedComparisonIDs),
 		FileSize:        stat.Size(),
 		LastModified:    stat.ModTime(),
 	}, nil
@@ -1126,34 +1083,23 @@ func (s *Session) ProcessPairwiseComparison(winnerID, loserID string, engine Elo
 	}
 
 	// Complete the comparison with results (internal version, mutex already held)
-	comparison, err := s.completeComparisonInternal(winnerID, nil, false, "")
-	if err != nil {
+	if _, err = s.completeComparisonInternal(winnerID, nil, false, ""); err != nil {
 		return fmt.Errorf("failed to complete comparison: %w", err)
 	}
 
 	// Apply rating updates
 	for _, update := range result.Updates {
-		eloUpdate := EloUpdate{
-			ID:           fmt.Sprintf("upd_%s_%d", update.ProposalID, time.Now().UnixNano()),
-			ComparisonID: comparison.ID,
-			ProposalID:   update.ProposalID,
-			OldRating:    update.OldRating,
-			NewRating:    update.NewRating,
-			RatingDelta:  update.Delta,
-			KFactor:      update.KFactor,
-		}
-
-		// Add to comparison
-		for i := range s.CompletedComparisons {
-			if s.CompletedComparisons[i].ID == comparison.ID {
-				s.CompletedComparisons[i].EloUpdates = append(s.CompletedComparisons[i].EloUpdates, eloUpdate)
-				break
-			}
-		}
-
-		// Update proposal rating
+		// Update proposal rating directly
 		if err := s.updateProposalRatingInternal(update.ProposalID, update.NewRating); err != nil {
 			return fmt.Errorf("failed to update proposal rating: %w", err)
+		}
+
+		// Track rating change for convergence metrics
+		if s.ConvergenceMetrics != nil {
+			s.ConvergenceMetrics.RecentRatingChanges = append(s.ConvergenceMetrics.RecentRatingChanges, update.Delta)
+			if len(s.ConvergenceMetrics.RecentRatingChanges) > 10 {
+				s.ConvergenceMetrics.RecentRatingChanges = s.ConvergenceMetrics.RecentRatingChanges[1:]
+			}
 		}
 	}
 
@@ -1256,8 +1202,7 @@ func (s *Session) ProcessMultiProposalComparison(rankings []string, engine EloEn
 
 	// Complete the comparison (internal version, mutex already held)
 	winnerID := rankings[0] // Best ranked proposal
-	comparison, err := s.completeComparisonInternal(winnerID, rankings, false, "")
-	if err != nil {
+	if _, err := s.completeComparisonInternal(winnerID, rankings, false, ""); err != nil {
 		return fmt.Errorf("failed to complete comparison: %w", err)
 	}
 
@@ -1276,28 +1221,17 @@ func (s *Session) ProcessMultiProposalComparison(rankings []string, engine EloEn
 			finalRating = update.NewRating // Use last calculated rating
 		}
 
-		// Create consolidated Elo update
-		eloUpdate := EloUpdate{
-			ID:           fmt.Sprintf("upd_%s_%d", proposalID, time.Now().UnixNano()),
-			ComparisonID: comparison.ID,
-			ProposalID:   proposalID,
-			OldRating:    updates[0].OldRating,
-			NewRating:    finalRating,
-			RatingDelta:  totalDelta,
-			KFactor:      updates[0].KFactor, // Use K-factor from first update
-		}
-
-		// Add to comparison
-		for i := range s.CompletedComparisons {
-			if s.CompletedComparisons[i].ID == comparison.ID {
-				s.CompletedComparisons[i].EloUpdates = append(s.CompletedComparisons[i].EloUpdates, eloUpdate)
-				break
-			}
-		}
-
-		// Update proposal rating
+		// Update proposal rating directly
 		if err := s.updateProposalRatingInternal(proposalID, finalRating); err != nil {
 			return fmt.Errorf("failed to update proposal rating: %w", err)
+		}
+
+		// Track rating change for convergence metrics
+		if s.ConvergenceMetrics != nil {
+			s.ConvergenceMetrics.RecentRatingChanges = append(s.ConvergenceMetrics.RecentRatingChanges, totalDelta)
+			if len(s.ConvergenceMetrics.RecentRatingChanges) > 10 {
+				s.ConvergenceMetrics.RecentRatingChanges = s.ConvergenceMetrics.RecentRatingChanges[1:]
+			}
 		}
 	}
 
@@ -1335,16 +1269,11 @@ func (s *Session) updateProposalRatingInternal(proposalID string, newRating floa
 
 // getProposalGameCount counts how many comparisons a proposal has participated in
 func (s *Session) getProposalGameCount(proposalID string) int {
-	count := 0
-	for _, comparison := range s.CompletedComparisons {
-		for _, id := range comparison.ProposalIDs {
-			if id == proposalID {
-				count++
-				break
-			}
-		}
+	// Use ComparisonCounts map for O(1) lookup instead of iterating
+	if count, exists := s.ComparisonCounts[proposalID]; exists {
+		return count
 	}
-	return count
+	return 0
 }
 
 // calculateInformationGain estimates the information value of a comparison
