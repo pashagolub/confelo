@@ -3,7 +3,7 @@ module github.com/pashagolub/confelo
 go 1.25.1
 
 require (
-	github.com/gdamore/tcell/v2 v2.13.5
+	github.com/gdamore/tcell/v2 v2.13.7
 	github.com/jessevdk/go-flags v1.6.1
 	github.com/rivo/tview v0.42.0
 	github.com/stretchr/testify v1.11.1
