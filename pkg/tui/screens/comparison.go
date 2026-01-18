@@ -38,6 +38,7 @@ type ComparisonScreen struct {
 	rightPanel     *tview.Flex
 	proposalsPanel *tview.Flex
 	proposalCards  []*tview.TextView // Dynamic array for 2-4 proposals
+	modePanel      *tview.TextView
 	controlPanel   *tview.TextView
 	progressBar    *tview.TextView
 	statusBar      *tview.TextView
@@ -63,6 +64,7 @@ func NewComparisonScreen() *ComparisonScreen {
 		rightPanel:       tview.NewFlex(),
 		proposalsPanel:   tview.NewFlex(),
 		proposalCards:    make([]*tview.TextView, 0, 4), // Start empty, max 4
+		modePanel:        tview.NewTextView(),
 		controlPanel:     tview.NewTextView(),
 		progressBar:      tview.NewTextView(),
 		statusBar:        tview.NewTextView(),
@@ -96,6 +98,12 @@ func (cs *ComparisonScreen) setupUI() {
 	// Proposal cards will be created dynamically based on comparison method
 	// This allows support for pairwise (2), trio (3), or quartet (4) comparisons
 
+	// Configure mode panel
+	cs.modePanel.
+		SetBorder(true).
+		SetTitle("Mode")
+	cs.modePanel.SetDynamicColors(true)
+
 	// Configure control panel - use TextView methods correctly
 	cs.controlPanel.
 		SetBorder(true).
@@ -120,8 +128,9 @@ func (cs *ComparisonScreen) setupUI() {
 	// Layout left panel: proposals panel takes all space
 	cs.leftPanel.AddItem(cs.proposalsPanel, 0, 1, false)
 
-	// Layout right panel: controls, progress, status
+	// Layout right panel: mode, controls, progress, status
 	cs.rightPanel.
+		AddItem(cs.modePanel, 6, 0, false).
 		AddItem(cs.controlPanel, 0, 2, false).
 		AddItem(cs.progressBar, 6, 0, false).
 		AddItem(cs.statusBar, 3, 0, false)
@@ -488,6 +497,7 @@ func (cs *ComparisonScreen) createComparisonKey(proposalIDs []string) string {
 // updateDisplay refreshes the UI state (carousel handles its own display)
 func (cs *ComparisonScreen) updateDisplay() {
 	// Update control panel components
+	cs.updateMode()
 	cs.updateInstructions()
 	cs.updateProgress()
 	cs.updateStatus()
@@ -1082,6 +1092,28 @@ func (cs *ComparisonScreen) getProposalIDs() []string {
 		ids[i] = proposal.ID
 	}
 	return ids
+}
+
+// updateMode updates the mode display with current comparison mode
+func (cs *ComparisonScreen) updateMode() {
+	var modeText strings.Builder
+
+	switch cs.comparisonMethod {
+	case data.MethodPairwise:
+		modeText.WriteString("[green::b]→ Pairwise (P)[-]\n")
+		modeText.WriteString("[dim]  Trio (T)[-]\n")
+		modeText.WriteString("[dim]  Quartet (Q)[-]")
+	case data.MethodTrio:
+		modeText.WriteString("[dim]  Pairwise (P)[-]\n")
+		modeText.WriteString("[green::b]→ Trio (T)[-]\n")
+		modeText.WriteString("[dim]  Quartet (Q)[-]")
+	case data.MethodQuartet:
+		modeText.WriteString("[dim]  Pairwise (P)[-]\n")
+		modeText.WriteString("[dim]  Trio (T)[-]\n")
+		modeText.WriteString("[green::b]→ Quartet (Q)[-]")
+	}
+
+	cs.modePanel.SetText(modeText.String())
 }
 
 // updateInstructions updates the control panel with current instructions
