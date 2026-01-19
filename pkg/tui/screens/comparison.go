@@ -17,7 +17,6 @@ import (
 	"github.com/rivo/tview"
 
 	"github.com/pashagolub/confelo/pkg/data"
-	"github.com/pashagolub/confelo/pkg/elo"
 )
 
 // Sentinel errors for expected completion scenarios
@@ -513,25 +512,6 @@ func (cs *ComparisonScreen) updateDisplay() {
 	cs.updateStatus()
 }
 
-// selectWinner handles winner selection in comparison
-func (cs *ComparisonScreen) selectWinner(winner string) {
-	winnerIndex, err := strconv.Atoi(winner)
-	if err != nil || winnerIndex < 1 || winnerIndex > len(cs.currentProposals) {
-		return // Invalid selection, ignore
-	}
-
-	cs.selectedWinner = cs.currentProposals[winnerIndex-1].ID
-
-	// Save current state for undo
-	cs.saveComparisonToHistory()
-
-	// Execute comparison and update ratings
-	_ = cs.executeComparison() // Skip to next comparison if there's an error
-
-	// Automatically load next comparison
-	cs.nextComparison()
-}
-
 // startRanking initiates multi-way ranking mode
 func (cs *ComparisonScreen) startRanking() {
 	if len(cs.currentProposals) < 2 {
@@ -900,81 +880,6 @@ func (cs *ComparisonScreen) setComparisonMode(method data.ComparisonMethod) {
 	cs.comparisonMethod = method
 	_ = cs.loadNextComparison()
 	cs.updateDisplay()
-}
-
-// executeComparison processes the comparison and updates ratings
-func (cs *ComparisonScreen) executeComparison() error {
-	session := cs.getSession()
-	if session == nil {
-		return fmt.Errorf("no active session")
-	}
-
-	// Create a simple Elo engine for basic calculations
-	engine := &elo.Engine{
-		InitialRating: 1500.0,
-		KFactor:       32,
-		MinRating:     0.0,
-		MaxRating:     3000.0,
-	}
-
-	// For pairwise comparison, just do a simple rating swap
-	if cs.comparisonMethod == data.MethodPairwise && len(cs.currentProposals) == 2 {
-		winnerIdx := 0
-		loserIdx := 1
-		if cs.selectedWinner == cs.currentProposals[1].ID {
-			winnerIdx = 1
-			loserIdx = 0
-		}
-
-		winner := elo.Rating{
-			ID:    cs.currentProposals[winnerIdx].ID,
-			Score: cs.currentProposals[winnerIdx].Score,
-		}
-		loser := elo.Rating{
-			ID:    cs.currentProposals[loserIdx].ID,
-			Score: cs.currentProposals[loserIdx].Score,
-		}
-
-		newWinner, newLoser, err := engine.CalculatePairwise(winner, loser)
-		if err != nil {
-			return err
-		}
-
-		// Update session with new ratings
-		for i := range session.Proposals {
-			switch session.Proposals[i].ID {
-			case newWinner.ID:
-				session.Proposals[i].Score = newWinner.Score
-				session.Proposals[i].UpdatedAt = time.Now()
-			case newLoser.ID:
-				session.Proposals[i].Score = newLoser.Score
-				session.Proposals[i].UpdatedAt = time.Now()
-			}
-		}
-	}
-
-	// Record completed comparison
-	// Record the comparison IDs for duplicate detection
-	session.CompletedComparisonIDs = append(session.CompletedComparisonIDs, cs.getProposalIDs())
-
-	// Update lightweight comparison tracking for progress and confidence
-	session.TotalComparisons++
-	for _, proposalID := range cs.getProposalIDs() {
-		session.ComparisonCounts[proposalID]++
-	}
-
-	// Update convergence metrics to reflect new comparison
-	if session.ConvergenceMetrics != nil {
-		session.ConvergenceMetrics.TotalComparisons = session.TotalComparisons
-		session.ConvergenceMetrics.LastCalculated = time.Now()
-	}
-
-	// Save session back to app if possible
-	if app, ok := cs.app.(interface{ SetSession(*data.Session) }); ok {
-		app.SetSession(session)
-	}
-
-	return nil
 }
 
 // Helper methods
