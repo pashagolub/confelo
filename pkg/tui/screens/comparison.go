@@ -17,7 +17,6 @@ import (
 	"github.com/rivo/tview"
 
 	"github.com/pashagolub/confelo/pkg/data"
-	"github.com/pashagolub/confelo/pkg/elo"
 )
 
 // Sentinel errors for expected completion scenarios
@@ -29,6 +28,16 @@ var (
 	// ErrMaxComparisonsReached indicates that the maximum comparison limit has been reached
 	ErrMaxComparisonsReached = errors.New("maximum comparison limit reached")
 )
+
+// comparisonRecord stores a completed comparison for undo functionality
+type comparisonRecord struct {
+	proposals    []data.Proposal
+	method       data.ComparisonMethod
+	rankings     []string // For multi-way comparisons
+	winnerID     string   // For pairwise comparisons
+	oldScores    map[string]float64
+	completedIDs []string
+}
 
 // ComparisonScreen implements the comparison interface for ranking proposals
 type ComparisonScreen struct {
@@ -51,6 +60,9 @@ type ComparisonScreen struct {
 	proposalRanks    map[string]int // Maps proposal ID to assigned rank (1-4)
 	isRanking        bool
 	currentRank      int // Next rank to assign (1-4)
+
+	// Comparison history for undo
+	comparisonHistory []comparisonRecord
 
 	// App reference - we'll use any and cast as needed
 	app any
@@ -285,22 +297,19 @@ func (cs *ComparisonScreen) handleInput(event *tcell.EventKey) *tcell.EventKey {
 	case 'k':
 		return tcell.NewEventKey(tcell.KeyUp, 0, tcell.ModNone)
 	case '1', '2', '3', '4':
-		// For trio/quartet mode, automatically use ranking
-		if cs.comparisonMethod == data.MethodTrio || cs.comparisonMethod == data.MethodQuartet {
-			if !cs.isRanking {
-				cs.startRanking()
-			}
-			cs.handleRankingInput(event.Rune())
-			return nil
+		// All modes now use consistent ranking approach
+		if !cs.isRanking {
+			cs.startRanking()
 		}
-		// For pairwise mode, check if we're in ranking mode first
-		if cs.handleRankingInput(event.Rune()) {
-			return nil
-		}
-		cs.selectWinner(string(event.Rune()))
+		cs.handleRankingInput(event.Rune())
 		return nil
 	case 's', 'n':
 		cs.nextComparison()
+		return nil
+	case 'u':
+		if !cs.isRanking {
+			cs.undoLastComparison()
+		}
 		return nil
 	case 'p':
 		cs.setComparisonMode(data.MethodPairwise)
@@ -503,22 +512,6 @@ func (cs *ComparisonScreen) updateDisplay() {
 	cs.updateStatus()
 }
 
-// selectWinner handles winner selection in comparison
-func (cs *ComparisonScreen) selectWinner(winner string) {
-	winnerIndex, err := strconv.Atoi(winner)
-	if err != nil || winnerIndex < 1 || winnerIndex > len(cs.currentProposals) {
-		return // Invalid selection, ignore
-	}
-
-	cs.selectedWinner = cs.currentProposals[winnerIndex-1].ID
-
-	// Execute comparison and update ratings
-	_ = cs.executeComparison() // Skip to next comparison if there's an error
-
-	// Automatically load next comparison
-	cs.nextComparison()
-}
-
 // startRanking initiates multi-way ranking mode
 func (cs *ComparisonScreen) startRanking() {
 	if len(cs.currentProposals) < 2 {
@@ -545,19 +538,23 @@ func (cs *ComparisonScreen) handleRankingInput(key rune) bool {
 		// Numbers assign the current rank to a specific proposal
 		proposalIndex, _ := strconv.Atoi(string(key))
 		if proposalIndex >= 1 && proposalIndex <= len(cs.currentProposals) {
+			proposalID := cs.currentProposals[proposalIndex-1].ID
+
+			// Prevent assigning rank to already ranked proposal
+			if _, alreadyRanked := cs.proposalRanks[proposalID]; alreadyRanked {
+				return true // Ignore duplicate selection
+			}
+
 			cs.assignRankToProposal(proposalIndex-1, cs.currentRank)
-		}
-		return true
-	case '\r', '\n': // Enter key to confirm ranking (only if all ranks assigned)
-		if len(cs.proposalRanks) == len(cs.currentProposals) {
-			cs.confirmRanking()
+
+			// Auto-confirm when all ranks are assigned (like pairwise mode)
+			if len(cs.proposalRanks) == len(cs.currentProposals) {
+				cs.confirmRanking()
+			}
 		}
 		return true
 	case 27: // Escape key to cancel ranking
 		cs.cancelRanking()
-		return true
-	case 'u': // 'u' for undo last ranking assignment
-		cs.undoLastRank()
 		return true
 	}
 
@@ -572,6 +569,9 @@ func (cs *ComparisonScreen) confirmRanking() {
 
 	// Build final rankings array
 	cs.buildRankingsArray()
+
+	// Save current state for undo
+	cs.saveComparisonToHistory()
 
 	// Execute multi-way comparison based on ranking
 	_ = cs.executeMultiWayComparison() // Continue on error
@@ -620,34 +620,115 @@ func (cs *ComparisonScreen) assignRankToProposal(proposalIndex, rank int) {
 		cs.currentRank++
 	}
 
+	// Auto-complete last rank when only one proposal remains unranked
+	if len(cs.proposalRanks) == len(cs.currentProposals)-1 {
+		// Find the unranked proposal and assign it the last rank
+		for _, proposal := range cs.currentProposals {
+			if _, ranked := cs.proposalRanks[proposal.ID]; !ranked {
+				cs.proposalRanks[proposal.ID] = cs.currentRank
+				break
+			}
+		}
+	}
+
 	// Build rankings array
 	cs.buildRankingsArray()
 	cs.updateDisplay()
 }
 
-// undoLastRank removes the last assigned rank
-func (cs *ComparisonScreen) undoLastRank() {
-	if len(cs.proposalRanks) == 0 {
+// saveComparisonToHistory saves current comparison state before executing it
+func (cs *ComparisonScreen) saveComparisonToHistory() {
+	session := cs.getSession()
+	if session == nil {
 		return
 	}
 
-	// Find the highest rank and remove it
-	highestRank := 0
-	var proposalToRemove string
+	// Save old scores for all proposals in this comparison
+	oldScores := make(map[string]float64)
+	for _, proposal := range cs.currentProposals {
+		oldScores[proposal.ID] = proposal.Score
+	}
 
-	for proposalID, rank := range cs.proposalRanks {
-		if rank > highestRank {
-			highestRank = rank
-			proposalToRemove = proposalID
+	// Create record
+	record := comparisonRecord{
+		proposals:    make([]data.Proposal, len(cs.currentProposals)),
+		method:       cs.comparisonMethod,
+		oldScores:    oldScores,
+		completedIDs: cs.getProposalIDs(),
+	}
+	copy(record.proposals, cs.currentProposals)
+
+	if cs.isRanking {
+		record.rankings = make([]string, len(cs.rankings))
+		copy(record.rankings, cs.rankings)
+	} else {
+		record.winnerID = cs.selectedWinner
+	}
+
+	cs.comparisonHistory = append(cs.comparisonHistory, record)
+
+	// Keep history manageable (last 50 comparisons)
+	if len(cs.comparisonHistory) > 50 {
+		cs.comparisonHistory = cs.comparisonHistory[1:]
+	}
+}
+
+// undoLastComparison reverses the last completed comparison
+func (cs *ComparisonScreen) undoLastComparison() {
+	if len(cs.comparisonHistory) == 0 {
+		return // Nothing to undo
+	}
+
+	session := cs.getSession()
+	if session == nil {
+		return
+	}
+
+	// Get last comparison
+	lastIdx := len(cs.comparisonHistory) - 1
+	last := cs.comparisonHistory[lastIdx]
+
+	// Restore old scores
+	for i := range session.Proposals {
+		if oldScore, exists := last.oldScores[session.Proposals[i].ID]; exists {
+			session.Proposals[i].Score = oldScore
+			session.Proposals[i].UpdatedAt = time.Now()
 		}
 	}
 
-	if proposalToRemove != "" {
-		delete(cs.proposalRanks, proposalToRemove)
-		cs.currentRank = highestRank
-		cs.buildRankingsArray()
-		cs.updateDisplay()
+	// Remove from completed comparisons
+	if len(session.CompletedComparisonIDs) > 0 {
+		session.CompletedComparisonIDs = session.CompletedComparisonIDs[:len(session.CompletedComparisonIDs)-1]
 	}
+
+	// Update comparison counts
+	if session.TotalComparisons > 0 {
+		session.TotalComparisons--
+	}
+	for _, proposalID := range last.completedIDs {
+		if session.ComparisonCounts[proposalID] > 0 {
+			session.ComparisonCounts[proposalID]--
+		}
+	}
+
+	// Remove from history
+	cs.comparisonHistory = cs.comparisonHistory[:lastIdx]
+
+	// Reload the undone comparison
+	cs.currentProposals = last.proposals
+	cs.comparisonMethod = last.method
+
+	// Setup for the comparison mode
+	if len(last.rankings) > 0 {
+		// Was a multi-way comparison - don't auto-start ranking
+		cs.isRanking = false
+	} else {
+		// Was pairwise
+		cs.selectedWinner = ""
+	}
+
+	cs.updateProposalDisplay()
+	cs.updateDisplay()
 }
 
 // buildRankingsArray constructs the rankings array from proposalRanks map
@@ -765,7 +846,7 @@ func (cs *ComparisonScreen) showCompletionMessage() {
 	// Show completion message in the first card (there should be at least one)
 	if len(cs.proposalCards) > 0 {
 		completionText := fmt.Sprintf("[green::b]%s[white::-]\n\n%s\n\n[yellow]Options:[-]\n"+
-			"  [blue]Ctrl+R[-] - View Rankings\n"+
+			"  [blue]R[-] - View Rankings\n"+
 			"  [blue]Esc[-] - Return to main menu\n"+
 			"  [blue]Ctrl+C[-] - Exit application",
 			completionTitle, completionReason)
@@ -799,81 +880,6 @@ func (cs *ComparisonScreen) setComparisonMode(method data.ComparisonMethod) {
 	cs.comparisonMethod = method
 	_ = cs.loadNextComparison()
 	cs.updateDisplay()
-}
-
-// executeComparison processes the comparison and updates ratings
-func (cs *ComparisonScreen) executeComparison() error {
-	session := cs.getSession()
-	if session == nil {
-		return fmt.Errorf("no active session")
-	}
-
-	// Create a simple Elo engine for basic calculations
-	engine := &elo.Engine{
-		InitialRating: 1500.0,
-		KFactor:       32,
-		MinRating:     0.0,
-		MaxRating:     3000.0,
-	}
-
-	// For pairwise comparison, just do a simple rating swap
-	if cs.comparisonMethod == data.MethodPairwise && len(cs.currentProposals) == 2 {
-		winnerIdx := 0
-		loserIdx := 1
-		if cs.selectedWinner == cs.currentProposals[1].ID {
-			winnerIdx = 1
-			loserIdx = 0
-		}
-
-		winner := elo.Rating{
-			ID:    cs.currentProposals[winnerIdx].ID,
-			Score: cs.currentProposals[winnerIdx].Score,
-		}
-		loser := elo.Rating{
-			ID:    cs.currentProposals[loserIdx].ID,
-			Score: cs.currentProposals[loserIdx].Score,
-		}
-
-		newWinner, newLoser, err := engine.CalculatePairwise(winner, loser)
-		if err != nil {
-			return err
-		}
-
-		// Update session with new ratings
-		for i := range session.Proposals {
-			switch session.Proposals[i].ID {
-			case newWinner.ID:
-				session.Proposals[i].Score = newWinner.Score
-				session.Proposals[i].UpdatedAt = time.Now()
-			case newLoser.ID:
-				session.Proposals[i].Score = newLoser.Score
-				session.Proposals[i].UpdatedAt = time.Now()
-			}
-		}
-	}
-
-	// Record completed comparison
-	// Record the comparison IDs for duplicate detection
-	session.CompletedComparisonIDs = append(session.CompletedComparisonIDs, cs.getProposalIDs())
-
-	// Update lightweight comparison tracking for progress and confidence
-	session.TotalComparisons++
-	for _, proposalID := range cs.getProposalIDs() {
-		session.ComparisonCounts[proposalID]++
-	}
-
-	// Update convergence metrics to reflect new comparison
-	if session.ConvergenceMetrics != nil {
-		session.ConvergenceMetrics.TotalComparisons = session.TotalComparisons
-		session.ConvergenceMetrics.LastCalculated = time.Now()
-	}
-
-	// Save session back to app if possible
-	if app, ok := cs.app.(interface{ SetSession(*data.Session) }); ok {
-		app.SetSession(session)
-	}
-
-	return nil
 }
 
 // Helper methods
@@ -1120,36 +1126,42 @@ func (cs *ComparisonScreen) updateMode() {
 func (cs *ComparisonScreen) updateInstructions() {
 	var instructions strings.Builder
 
-	instructions.WriteString("[yellow]Current Mode:[-] ")
-	instructions.WriteString(string(cs.comparisonMethod))
-	instructions.WriteString("\n\n")
-
 	if cs.isRanking {
-		instructions.WriteString(fmt.Sprintf("[green]Ranking Mode: Assigning Rank %d[-]\n", cs.currentRank))
-		instructions.WriteString("Press the number of the proposal to assign this rank:\n")
+		instructions.WriteString(fmt.Sprintf("[green]Ranking: Select #%d (Best → Worst)[-]\n", cs.currentRank))
 		for i := range cs.currentProposals {
 			// Show which proposals already have ranks
 			proposalID := cs.currentProposals[i].ID
 			if rank, hasRank := cs.proposalRanks[proposalID]; hasRank {
-				instructions.WriteString(fmt.Sprintf("  %d - Proposal %d [dim](Rank %d)[-]\n", i+1, i+1, rank))
+				instructions.WriteString(fmt.Sprintf("  %d - Proposal %d [green]✓ Rank %d[-]\n", i+1, i+1, rank))
 			} else {
 				instructions.WriteString(fmt.Sprintf("  %d - Proposal %d\n", i+1, i+1))
 			}
 		}
-		instructions.WriteString("\n[yellow]u[-] - Undo last | [yellow]Enter[-] - Confirm (when all ranked)")
+		// Show how many more selections needed
+		remaining := len(cs.currentProposals) - len(cs.proposalRanks)
+		if remaining == 1 {
+			instructions.WriteString("\n[dim]Last rank will be auto-assigned[-]")
+		} else if remaining > 1 {
+			instructions.WriteString(fmt.Sprintf("\n[dim]%d more to select, last auto-assigned[-]", remaining-1))
+		}
 	} else {
-		// Different instructions based on comparison method
-		if cs.comparisonMethod == data.MethodTrio || cs.comparisonMethod == data.MethodQuartet {
-			instructions.WriteString("[white]Rank all proposals from best (1) to worst:[-]\n")
-			for i := range cs.currentProposals {
-				instructions.WriteString(fmt.Sprintf("  %d - Proposal %d\n", i+1, i+1))
-			}
-		} else {
-			instructions.WriteString("[white]Select the best proposal:[-]\n")
-			for i := range cs.currentProposals {
-				instructions.WriteString(fmt.Sprintf("  %d - Proposal %d\n", i+1, i+1))
-			}
-			instructions.WriteString("\n[blue]Or press 'r' to rank all[-]")
+		// Consistent instructions for all modes
+		switch cs.comparisonMethod {
+		case data.MethodPairwise:
+			instructions.WriteString("[white]Select the best proposal (2nd auto-assigned):[-]\n")
+		case data.MethodTrio:
+			instructions.WriteString("[white]Rank best to 2nd (3rd auto-assigned):[-]\n")
+		case data.MethodQuartet:
+			instructions.WriteString("[white]Rank best to 3rd (4th auto-assigned):[-]\n")
+		}
+
+		for i := range cs.currentProposals {
+			instructions.WriteString(fmt.Sprintf("  %d - Proposal %d\n", i+1, i+1))
+		}
+
+		// Show undo option if history exists
+		if len(cs.comparisonHistory) > 0 {
+			instructions.WriteString("\n[yellow]u[-] - Undo last comparison")
 		}
 	}
 
