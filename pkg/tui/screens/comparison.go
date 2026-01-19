@@ -866,7 +866,7 @@ func (cs *ComparisonScreen) showCompletionMessage() {
 	// Show completion message in the first card (there should be at least one)
 	if len(cs.proposalCards) > 0 {
 		completionText := fmt.Sprintf("[green::b]%s[white::-]\n\n%s\n\n[yellow]Options:[-]\n"+
-			"  [blue]Ctrl+R[-] - View Rankings\n"+
+			"  [blue]R[-] - View Rankings\n"+
 			"  [blue]Esc[-] - Return to main menu\n"+
 			"  [blue]Ctrl+C[-] - Exit application",
 			completionTitle, completionReason)

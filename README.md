@@ -70,11 +70,14 @@ go build ./cmd/confelo
    ```
 
 4. **Make comparisons**: Use the interactive terminal interface to compare proposals
-   - Number keys to enter proposals order
-   - Enter to select your preference
-   - 'r' key to view current rankings
-   - 'e' key to export results
-   - Ctrl+C to exit and save
+   - **Pairwise mode (P)**: Press 1 number key (best proposal, 2nd auto-assigned)
+   - **Trio mode (T)**: Press 2 number keys (1st & 2nd, 3rd auto-assigned)
+   - **Quartet mode (Q)**: Press 3 number keys (1st, 2nd & 3rd, 4th auto-assigned)
+   - **P/T/Q keys**: Switch comparison modes anytime
+   - **U key**: Undo last completed comparison
+   - **R key**: View current rankings
+   - **Esc**: Return to menu
+   - **Ctrl+C**: Exit and save
 
 ## How It Works
 
@@ -158,9 +161,11 @@ Where $K=32$ (sensitivity factor), and scores are $S_A = 1$ for win, $S_A = 0$ f
 
 ### Multi-Proposal Comparisons
 
-- **Trio**: You rank 3 proposals (1st, 2nd, 3rd), which creates 3 pairwise comparisons
-- **Quartet**: You rank 4 proposals, which creates 6 pairwise comparisons
-- All modes use the same proven Elo mathematics for consistency
+- **Pairwise**: Select the best of 2 proposals (1 keypress, 2nd auto-assigned)
+- **Trio**: Rank top 2 of 3 proposals (2 keypresses, 3rd auto-assigned)
+- **Quartet**: Rank top 3 of 4 proposals (3 keypresses, 4th auto-assigned)
+
+All modes use the same proven Elo mathematics for consistency. The last position is automatically assigned to reduce keypresses while maintaining ranking accuracy. You can switch between modes anytime during comparison using P/T/Q hotkeys.
 
 ### When to Stop
 

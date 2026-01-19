@@ -403,7 +403,7 @@ func (a *App) GetComparisonCount(proposalID string) int {
 func (a *App) handleGlobalInput(event *tcell.EventKey) *tcell.EventKey {
 	for _, binding := range globalKeyBindings {
 		if (binding.Key != tcell.KeyRune && event.Key() == binding.Key) ||
-			(binding.Key == tcell.KeyRune && event.Rune() == binding.Rune) {
+			(binding.Key == tcell.KeyRune && event.Rune() == binding.Rune && event.Modifiers() == tcell.ModNone) {
 
 			// Execute handler in a goroutine to prevent blocking
 			go func(handler func(*App) error) {
