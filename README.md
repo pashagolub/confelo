@@ -50,8 +50,8 @@ go build ./cmd/confelo
 ### Basic Usage
 
 1. **Prepare your data**: Create/download a CSV file with conference proposals
-   - Required columns: `id`, `title`, `speaker`
-   - Optional: `abstract`, `track`, and other metadata columns
+   - Required columns: `id`, `title`
+   - Optional columns: `speaker`, `abstract`, `score`, `comments`, `conflicts`, and any other metadata (column names are matched case-insensitively)
 
 2. **Start a new ranking session**:
 
@@ -74,12 +74,21 @@ go build ./cmd/confelo
    - **Trio mode (T)**: Press 2 number keys (1st & 2nd, 3rd auto-assigned)
    - **Quartet mode (Q)**: Press 3 number keys (1st, 2nd & 3rd, 4th auto-assigned)
    - **P/T/Q keys**: Switch comparison modes anytime
+   - **S/N keys**: Skip to another comparison (no rating change)
    - **U key**: Undo last completed comparison
-   - **R key**: View current rankings
-   - **Esc**: Return to menu
+   - **J/K or arrow keys**: Scroll proposal content
+   - **Esc**: Cancel an in-progress ranking (no menu is shown)
    - **Ctrl+C**: Exit and save
 
-## How It Works
+5. **Switch screens / export**: These keys work from any screen
+   - **R key**: View current rankings
+   - **C key**: Return to the comparison screen
+   - **E key**: Export scores to the input CSV (see Example Workflow below)
+
+On the rankings screen the following extra keys are available (in addition to arrow keys, which navigate the table):
+
+   - **S key**: Cycle the sort field (Rank → Elo → Score → Title → Speaker → Confidence)
+   - **O key**: Toggle the sort order (ascending/descending)
 
 **Confelo** automatically detects whether you're starting a new session or resuming an existing one based on the session name you provide. No subcommands needed!
 
@@ -87,6 +96,8 @@ go build ./cmd/confelo
 - **Resume Session**: If the session exists, it loads your previous progress
 
 The application uses the **Elo rating system** to intelligently select which proposals to compare next, focusing on matchups where your decision will have the most impact on the final ranking.
+
+Session files are stored under `sessions/<session-name>.json` relative to the current working directory. To resume a session later, run `confelo` from the same working directory you used when the session was created.
 
 ## Options
 
@@ -99,54 +110,62 @@ Required:
   --session-name string    Session name (creates new if not found, resumes if exists)
 
 For new sessions:
-  --input string          CSV file path (required for new sessions)
+  -i, --input string          CSV file path (required for new sessions)
 
 Optional settings:
-  --comparison-mode string    Comparison method: pairwise, trio, quartet (default: pairwise)
-  --initial-rating float      Starting Elo rating for proposals (default: 1500.0)
-  --output-scale string       Rating scale format like "0-100" or "1.0-5.0" (default: "0-100")
-  --target-accepted int       Number of proposals to accept (default: 10)
+      --comparison-mode string    Comparison method: pairwise, trio, quartet (default: pairwise)
+      --initial-rating float      Starting Elo rating for proposals (default: 1500.0)
+      --output-scale string       Rating scale format like "0-100" or "1.0-5.0" (default: "0-100")
+  -t, --target-accepted int       Number of proposals to accept (default: 10)
 
 Other options:
-  --verbose                Enable detailed output
-  --version               Show version information
-  --help                  Show help message
+  -v, --verbose                Enable detailed output
+      --version               Show version information
+  -h, --help                  Show help message
 ```
 
 ### CSV Format Requirements
 
-Your CSV file must have these columns with a header row:
+Your CSV file must have a header row with at least these columns:
 
-- `id` - Unique identifier for each proposal
-- `title` - Proposal title
+- `id` - Unique identifier for each proposal (required)
+- `title` - Proposal title (required)
+
+Optionally recognized columns (defaults shown; rename via the corresponding `--*-column` flags when needed):
+
 - `speaker` - Speaker name
+- `abstract` - Proposal abstract / description
+- `score` - Score column; read on import and written on export
+- `comments` - Reviewer comments
+- `conflicts` - Conflict-of-interest markers
+
+Header names are matched case-insensitively.
+
+If you intend to use **E** to export scores, your input CSV must include a `score` column (empty values are fine — they default to the `--initial-rating`). Export fails with `score column 'score' not found in CSV` otherwise.
 
 Example CSV:
 
 ```csv
-id,title,speaker,abstract
-PROP001,"Building Resilient Microservices","Sarah Chen","In this talk, we'll explore..."
-PROP002,"Modern Web Development","Alex Kumar","Discover how TypeScript..."
+id,title,speaker,abstract,score
+PROP001,"Building Resilient Microservices","Sarah Chen","In this talk, we'll explore...",
+PROP002,"Modern Web Development","Alex Kumar","Discover how TypeScript...",
 ```
-
-## Example Workflow
 
 1. **Start your first session**:
 
-   ```bash
-   ./confelo --session-name "DevConf2025" --input my-proposals.csv
-   ```
+  ```bash
+  ./confelo --session-name "DevConf2025" --input my-proposals.csv
+  ```
 
 2. **Make some comparisons** in the interactive interface, then exit (Ctrl+C)
 
 3. **Resume later** to continue where you left off:
 
-   ```bash
-   ./confelo --session-name "DevConf2025"
-   ```
+  ```bash
+  ./confelo --session-name "DevConf2025"
+  ```
 
-4. **Export results** when done:
-   - Press 'e' in the interface to export ranked proposals to `my-proposals.csv`
+4. **Export results** when done: press **E** in the interface. Confelo writes the new Elo-derived score back into the `score` column of the **original input CSV** in place — all other columns are preserved. Exported scores are linearly rescaled from the session's actual Elo min/max to the `--output-scale` range; integer or decimal output is inferred from whether the scale contains a `.` (e.g. `0-100` → integers, `0.0-5.0` → decimals).
 
 ## Algorithm Details
 
