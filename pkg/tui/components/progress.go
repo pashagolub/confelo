@@ -258,17 +258,17 @@ func (p *Progress) updateMetricsDisplay() {
 	var builder strings.Builder
 
 	// Basic metrics
-	builder.WriteString(fmt.Sprintf("Total Comparisons: [yellow]%d[white]\n",
-		p.currentMetrics.TotalComparisons))
+	fmt.Fprintf(&builder, "Total Comparisons: [yellow]%d[white]\n",
+		p.currentMetrics.TotalComparisons)
 
-	builder.WriteString(fmt.Sprintf("Coverage: [green]%.1f%%[white]\n",
-		p.currentMetrics.CoverageComplete*100))
+	fmt.Fprintf(&builder, "Coverage: [green]%.1f%%[white]\n",
+		p.currentMetrics.CoverageComplete*100)
 
-	builder.WriteString(fmt.Sprintf("Convergence Rate: [blue]%.3f[white]\n",
-		p.currentMetrics.ConvergenceRate))
+	fmt.Fprintf(&builder, "Convergence Rate: [blue]%.3f[white]\n",
+		p.currentMetrics.ConvergenceRate)
 
-	builder.WriteString(fmt.Sprintf("Top %d Stable: [cyan]%d[white]\n",
-		p.config.TopNForStability, p.currentMetrics.TopNStable))
+	fmt.Fprintf(&builder, "Top %d Stable: [cyan]%d[white]\n",
+		p.config.TopNForStability, p.currentMetrics.TopNStable)
 
 	// Confidence scores (show top 5)
 	if len(p.currentMetrics.ConfidenceScores) > 0 {
@@ -278,8 +278,8 @@ func (p *Progress) updateMetricsDisplay() {
 			if count >= 5 {
 				break
 			}
-			builder.WriteString(fmt.Sprintf("  %s: %.2f\n",
-				truncateID(proposalID, 8), confidence))
+			fmt.Fprintf(&builder, "  %s: %.2f\n",
+				truncateID(proposalID, 8), confidence)
 			count++
 		}
 	}
@@ -297,31 +297,31 @@ func (p *Progress) updateStatusDisplay() {
 	var builder strings.Builder
 
 	// Remaining work estimate
-	builder.WriteString(fmt.Sprintf("Estimated Remaining: [yellow]%d[white] comparisons\n",
-		p.currentMetrics.EstimatedRemaining))
+	fmt.Fprintf(&builder, "Estimated Remaining: [yellow]%d[white] comparisons\n",
+		p.currentMetrics.EstimatedRemaining)
 
 	// Time estimates (if we have comparison history)
 	if p.history != nil && len(p.history.Comparisons) > 0 {
 		avgDuration := p.calculateAverageComparisonDuration()
 		estimatedTime := time.Duration(p.currentMetrics.EstimatedRemaining) * avgDuration
 
-		builder.WriteString(fmt.Sprintf("Estimated Time: [cyan]%s[white]\n",
-			formatDuration(estimatedTime)))
+		fmt.Fprintf(&builder, "Estimated Time: [cyan]%s[white]\n",
+			formatDuration(estimatedTime))
 
 		// Session progress
 		elapsed := time.Since(p.history.StartTime)
-		builder.WriteString(fmt.Sprintf("Session Time: [blue]%s[white]\n",
-			formatDuration(elapsed)))
+		fmt.Fprintf(&builder, "Session Time: [blue]%s[white]\n",
+			formatDuration(elapsed))
 	}
 
 	// Convergence status
 	convergenceStatus := p.getConvergenceStatusText()
-	builder.WriteString(fmt.Sprintf("\nStatus: %s\n", convergenceStatus))
+	fmt.Fprintf(&builder, "\nStatus: %s\n", convergenceStatus)
 
 	// Recommendations
 	recommendations := p.getRecommendations()
 	if recommendations != "" {
-		builder.WriteString(fmt.Sprintf("\n[green]Recommendation:[white]\n%s", recommendations))
+		fmt.Fprintf(&builder, "\n[green]Recommendation:[white]\n%s", recommendations)
 	}
 
 	p.statusText.SetText(builder.String())
