@@ -354,11 +354,11 @@ func (c *Carousel) formatProposalContent(proposal data.Proposal) string {
 	var content strings.Builder
 
 	// Title
-	content.WriteString(fmt.Sprintf("[white::b]%s[white::-]\n\n", proposal.Title))
+	fmt.Fprintf(&content, "[white::b]%s[white::-]\n\n", proposal.Title)
 
 	// Speaker (if available)
 	if proposal.Speaker != "" {
-		content.WriteString(fmt.Sprintf("[yellow]Speaker:[-] %s\n\n", proposal.Speaker))
+		fmt.Fprintf(&content, "[yellow]Speaker:[-] %s\n\n", proposal.Speaker)
 	}
 
 	// Abstract (with length handling)
@@ -368,24 +368,24 @@ func (c *Carousel) formatProposalContent(proposal data.Proposal) string {
 		// In compact mode, truncate long abstracts
 		if !c.expandedView && len(abstract) > 300 {
 			abstract = abstract[:297] + "..."
-			content.WriteString(fmt.Sprintf("[green]Abstract:[-]\n%s\n\n", abstract))
+			fmt.Fprintf(&content, "[green]Abstract:[-]\n%s\n\n", abstract)
 			content.WriteString("[dim]Press Tab for full view[-]\n\n")
 		} else {
-			content.WriteString(fmt.Sprintf("[green]Abstract:[-]\n%s\n\n", abstract))
+			fmt.Fprintf(&content, "[green]Abstract:[-]\n%s\n\n", abstract)
 		}
 	}
 
 	// Current rating
-	content.WriteString(fmt.Sprintf("[blue]Current Rating:[-] %.0f", proposal.Score))
+	fmt.Fprintf(&content, "[blue]Current Rating:[-] %.0f", proposal.Score)
 
 	// Original score (if different)
 	if proposal.OriginalScore != nil && *proposal.OriginalScore != proposal.Score {
-		content.WriteString(fmt.Sprintf(" (was %.0f)", *proposal.OriginalScore))
+		fmt.Fprintf(&content, " (was %.0f)", *proposal.OriginalScore)
 	}
 
 	// Conflict tags (if any)
 	if len(proposal.ConflictTags) > 0 {
-		content.WriteString(fmt.Sprintf("\n\n[red]Conflicts:[-] %s", strings.Join(proposal.ConflictTags, ", ")))
+		fmt.Fprintf(&content, "\n\n[red]Conflicts:[-] %s", strings.Join(proposal.ConflictTags, ", "))
 	}
 
 	// Metadata (in expanded view)
@@ -393,7 +393,7 @@ func (c *Carousel) formatProposalContent(proposal data.Proposal) string {
 		content.WriteString("\n\n[cyan]Additional Information:[-]")
 		for key, value := range proposal.Metadata {
 			if value != "" {
-				content.WriteString(fmt.Sprintf("\n  %s: %s", key, value))
+				fmt.Fprintf(&content, "\n  %s: %s", key, value)
 			}
 		}
 	}

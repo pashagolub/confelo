@@ -208,20 +208,20 @@ func (cs *ComparisonScreen) formatProposalContent(proposal data.Proposal) string
 	var content strings.Builder
 
 	// Title
-	content.WriteString(fmt.Sprintf("[white::b]%s[white::-]\n\n", proposal.Title))
+	fmt.Fprintf(&content, "[white::b]%s[white::-]\n\n", proposal.Title)
 
 	// Speaker (if available)
 	if proposal.Speaker != "" {
-		content.WriteString(fmt.Sprintf("[yellow]Speaker:[-] %s\n\n", proposal.Speaker))
+		fmt.Fprintf(&content, "[yellow]Speaker:[-] %s\n\n", proposal.Speaker)
 	}
 
 	// Abstract (if available)
 	if proposal.Abstract != "" {
-		content.WriteString(fmt.Sprintf("[green]Abstract:[-]\n%s\n\n", proposal.Abstract))
+		fmt.Fprintf(&content, "[green]Abstract:[-]\n%s\n\n", proposal.Abstract)
 	}
 
 	// Current rating
-	content.WriteString(fmt.Sprintf("[blue]Current Rating:[-] %.0f", proposal.Score))
+	fmt.Fprintf(&content, "[blue]Current Rating:[-] %.0f", proposal.Score)
 
 	return content.String()
 }
@@ -1127,14 +1127,14 @@ func (cs *ComparisonScreen) updateInstructions() {
 	var instructions strings.Builder
 
 	if cs.isRanking {
-		instructions.WriteString(fmt.Sprintf("[green]Ranking: Select #%d (Best → Worst)[-]\n", cs.currentRank))
+		fmt.Fprintf(&instructions, "[green]Ranking: Select #%d (Best → Worst)[-]\n", cs.currentRank)
 		for i := range cs.currentProposals {
 			// Show which proposals already have ranks
 			proposalID := cs.currentProposals[i].ID
 			if rank, hasRank := cs.proposalRanks[proposalID]; hasRank {
-				instructions.WriteString(fmt.Sprintf("  %d - Proposal %d [green]✓ Rank %d[-]\n", i+1, i+1, rank))
+				fmt.Fprintf(&instructions, "  %d - Proposal %d [green]✓ Rank %d[-]\n", i+1, i+1, rank)
 			} else {
-				instructions.WriteString(fmt.Sprintf("  %d - Proposal %d\n", i+1, i+1))
+				fmt.Fprintf(&instructions, "  %d - Proposal %d\n", i+1, i+1)
 			}
 		}
 		// Show how many more selections needed
@@ -1142,7 +1142,7 @@ func (cs *ComparisonScreen) updateInstructions() {
 		if remaining == 1 {
 			instructions.WriteString("\n[dim]Last rank will be auto-assigned[-]")
 		} else if remaining > 1 {
-			instructions.WriteString(fmt.Sprintf("\n[dim]%d more to select, last auto-assigned[-]", remaining-1))
+			fmt.Fprintf(&instructions, "\n[dim]%d more to select, last auto-assigned[-]", remaining-1)
 		}
 	} else {
 		// Consistent instructions for all modes
@@ -1156,7 +1156,7 @@ func (cs *ComparisonScreen) updateInstructions() {
 		}
 
 		for i := range cs.currentProposals {
-			instructions.WriteString(fmt.Sprintf("  %d - Proposal %d\n", i+1, i+1))
+			fmt.Fprintf(&instructions, "  %d - Proposal %d\n", i+1, i+1)
 		}
 
 		// Show undo option if history exists
